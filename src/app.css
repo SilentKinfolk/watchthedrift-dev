@@ -1,0 +1,296 @@
+/* watchthedrift — black-and-white, single-serving-site aesthetic, in the same
+   plain-text style as where-would-hms-belfast-hit: a centered question, a giant
+   answer, plain collapsible detail. Deliberately minimal, close to raw HTML. */
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  background: #fff;
+  color: #111;
+  font-family: Georgia, 'Times New Roman', Times, serif;
+  line-height: 1.5;
+  min-height: 100dvh;
+}
+
+/* Hero: the question + the big answer, centered */
+.hero {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 52px 20px 30px;
+  text-align: center;
+}
+
+.question {
+  margin: 0 0 22px;
+  font-size: clamp(1.8rem, 5vw, 2.9rem);
+  font-weight: normal;
+  line-height: 1.15;
+}
+
+/* The big answer — e.g. "+6 s". Black-and-white only: sign + words carry the
+   meaning, no colour coding. */
+.answer {
+  margin: 6px 0 10px;
+  font-size: clamp(2.3rem, 7vw, 4.6rem);
+  font-weight: bold;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.sub {
+  margin: 0 0 16px;
+  font-size: 1.15rem;
+}
+
+.cond {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.cond .status {
+  font-style: italic;
+}
+
+/* Live reference clock — the true (synced) time, shown so you can check your
+   watch against it by eye before scanning. Tabular figures so the seconds don't
+   jiggle the width as they tick. */
+.clock {
+  margin: 0 0 18px;
+}
+
+.clock-time {
+  font-size: clamp(1.7rem, 5.5vw, 2.6rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+
+.clock-label {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: #555;
+}
+
+/* Buttons rendered as plain underlined text links */
+.textlink {
+  background: none;
+  border: none;
+  color: #555;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.textlink:hover {
+  color: #000;
+}
+
+.textlink[aria-pressed='true'] {
+  color: #000;
+  font-weight: bold;
+}
+
+a {
+  color: #555;
+}
+
+a:hover {
+  color: #000;
+}
+
+/* Subtle controls row under the answer */
+.subnav {
+  margin-top: 16px;
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+/* Primary action: a plain white box that inverts to black on hover */
+.btn {
+  font: inherit;
+  font-size: 1rem;
+  background: #fff;
+  border: 1px solid #111;
+  color: #111;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #111;
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Camera viewfinder band (used from the camera step onward) */
+.viewfinder {
+  position: relative;
+  width: 100%;
+  margin: 4px 0 16px;
+  border: 1px solid #000;
+  background: #f3f3f3;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+}
+
+.viewfinder video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Explainer prose — a native <details>, summary styled as a centered text link */
+.explainer {
+  margin: 18px auto 0;
+  max-width: 600px;
+}
+
+.explainer > summary {
+  cursor: pointer;
+  list-style: none;
+  color: #555;
+  text-decoration: underline;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.explainer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.explainer > summary:hover {
+  color: #000;
+}
+
+.prose {
+  margin: 14px auto 0;
+  text-align: left;
+  font-size: 0.95rem;
+  color: #333;
+  line-height: 1.6;
+}
+
+.prose p {
+  margin: 0 0 10px;
+}
+
+/* Footer credits */
+.credits {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 22px 20px 40px;
+  text-align: center;
+  color: #999;
+  font-size: 0.75rem;
+}
+
+.credits a {
+  color: #777;
+}
+
+/* ---- app UI: camera, controls, result, debug ---- */
+
+.controls {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+/* Alignment guide drawn over the live preview. White with a thin black outline
+   so it reads against any background, in keeping with the B&W look. */
+/* Position + size set inline from the crop fractions (see Screen.applyGuide). */
+.guide {
+  position: absolute;
+  border: 2px solid #fff;
+  outline: 1px solid #000;
+  pointer-events: none;
+}
+
+.mode {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: #777;
+}
+
+.mode-label {
+  color: #999;
+}
+
+/* Debug view (only when ?debug=1) */
+.debug {
+  margin: 18px auto 0;
+  max-width: 600px;
+  text-align: left;
+}
+
+.debug-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #999;
+}
+
+.debug-canvas {
+  display: block;
+  max-width: 100%;
+  margin: 8px 0;
+  border: 1px solid #000;
+  image-rendering: pixelated;
+}
+
+.debug-meta {
+  margin: 0;
+  padding: 8px;
+  background: #f3f3f3;
+  font-family: ui-monospace, 'Courier New', Courier, monospace;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #333;
+}
+
+.debug-share {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.debug-fallback {
+  width: 100%;
+  height: 90px;
+  margin-top: 10px;
+  font-family: ui-monospace, 'Courier New', Courier, monospace;
+  font-size: 0.7rem;
+  word-break: break-all;
+}

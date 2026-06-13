@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="See how many seconds your Casio F-91W is off from real (NTP) time, right now — by pointing your camera at it." />
+    <title>watchthedrift</title>
+  </head>
+  <body>
+    <main class="hero" id="app">
+      <h1 class="question">How many seconds is your watch off?</h1>
+      <p class="sub">Loading…</p>
+      <noscript><p class="sub">This tool needs JavaScript and access to your camera.</p></noscript>
+    </main>
+
+    <details class="explainer">
+      <summary>how does this work?</summary>
+      <div class="prose">
+        <p>
+          A Casio F-91W is a quartz watch: accurate, but it slowly drifts away from real
+          time, and you rarely notice until it&rsquo;s well off. This tells you exactly how
+          far off it is, right now.
+        </p>
+        <p>
+          Point your phone&rsquo;s camera at the watch and tap measure. The time on the face
+          is read <strong>on your device</strong> &mdash; no photo ever leaves it &mdash; and
+          compared against an internet time reference (NTP-style, corrected for network
+          round-trip) at the instant of capture. If the reading isn&rsquo;t clear, it asks you
+          to retake rather than guess.
+        </p>
+        <p>
+          Because the watch shows only whole seconds, the answer is to the nearest second
+          &mdash; exactly what you need. Nothing is stored or logged: every measurement stands
+          on its own.
+        </p>
+      </div>
+    </details>
+
+    <footer class="credits">
+      An ephemeral, on-device drift check &middot;
+      <a href="https://github.com/SilentKinfolk/watchthedrift-dev">source on GitHub</a>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
