@@ -66,6 +66,7 @@ npm run dev      # http://localhost:5173 — secure context, so the camera works
 npm test         # Vitest (drift + time-sync + parser)
 npm run build    # typecheck + production build → dist/
 npm run harness  # run the segment decoder over tools/ images, save overlays to tools/out/
+npm run augment  # (v2) clean labelled photos → hard training variants in tools/training/
 ```
 Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 

@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "size": "node scripts/check-bundle-size.mjs",
-    "harness": "node --experimental-strip-types tools/ocr-harness.ts"
+    "harness": "node --experimental-strip-types tools/ocr-harness.ts",
+    "augment": "node --experimental-strip-types tools/augment.ts"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",
