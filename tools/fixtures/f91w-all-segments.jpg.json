@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "eval": false,
+  "source": {
+    "url": "https://commons.wikimedia.org/wiki/File:Casio_F-91W_watch_(2023)_(front_closeup_-all_segments).jpg",
+    "license": "CC-BY-SA-4.0",
+    "credit": "Multicherry"
+  },
+  "note": "All-segments test card (every segment lit → 88:88:88), not a real time. No `time` label, so it is excluded from scoring; kept as a detection/decode sanity card."
+}

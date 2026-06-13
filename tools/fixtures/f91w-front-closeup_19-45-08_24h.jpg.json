@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "stratum": "hard",
+  "eval": true,
+  "source": {
+    "url": "https://commons.wikimedia.org/wiki/File:Casio_F-91_W_front_closeup_minor_retouch.jpg",
+    "license": "CC-BY-SA-4.0",
+    "credit": "VSchagow"
+  },
+  "note": "Faint/degraded seconds segment. THE CARDINAL-SIN CASE: v1 is confidently WRONG here — reads 19:45:09 (conf 0.71) for a true 19:45:08. This is exactly what the precision-first gate exists to surface and the learned reader (#10) must fix; thresholding cannot recover ink that is not there."
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "stratum": "easy",
+  "eval": true,
+  "source": {
+    "url": "https://commons.wikimedia.org/wiki/File:Casio_F-91W_watch_(2023)_(front_closeup_-_time)_(no_retouch).jpg",
+    "license": "CC-BY-SA-4.0",
+    "credit": "Multicherry"
+  },
+  "note": "Clean, front-on, well-lit close-up — v1's comfort zone. Time from the filename (15-53-08). v1 decodes it correctly at conf ~0.70."
+}

@@ -14,7 +14,7 @@
 // Images: tools/fixtures/ (licensed) + tools/local/ (gitignored scratch).
 // Label times in the filename with hyphens: anything_10-42-15_24h.jpg.
 
-import { readdirSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { readdirSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createCanvas, loadImage, type Canvas } from '@napi-rs/canvas'
@@ -29,6 +29,23 @@ import {
   type Homography,
 } from '../src/recognize/rectify.ts'
 import { rectifyThenDecode } from '../src/recognize/RectifyingSegmentRecognizer.ts'
+import {
+  parseCornerLabel,
+  resolveLabel,
+  sidecarPathFor,
+  timeFromFilename,
+  STRATA,
+  type CornerLabel,
+} from '../src/eval/label.ts'
+import {
+  classify,
+  aggregate,
+  evaluateGate,
+  type ScoredItem,
+  type Report,
+  type GroupMetrics,
+  type GateResult,
+} from '../src/eval/metrics.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const OUT = join(HERE, 'out')
@@ -42,10 +59,8 @@ interface Expected {
   mm: number
   ss: number
 }
-function expectedFromName(file: string): Expected | null {
-  const m = basename(file).match(/(\d{1,2})-(\d{2})-(\d{2})/)
-  return m ? { hh: +m[1], mm: +m[2], ss: +m[3] } : null
-}
+// The filename time label (HH-MM-SS); shared by the scoring loop and the demo.
+const expectedFromName = (file: string): Expected | null => timeFromFilename(basename(file))
 
 const fmt = (t: { hh: number; mm: number; ss: number }): string => {
   const p = (n: number) => String(n).padStart(2, '0')
@@ -54,6 +69,45 @@ const fmt = (t: { hh: number; mm: number; ss: number }): string => {
 
 const matches = (r: { hh: number; mm: number; ss: number } | null, e: Expected): boolean =>
   !!r && r.hh === e.hh && r.mm === e.mm && r.ss === e.ss
+
+const pctStr = (x: number): string => `${(x * 100).toFixed(1)}%`
+
+/** Read + validate the corner-label sidecar beside an image (`<image>.json`), or
+ *  null when absent. A malformed sidecar is warned-about and skipped (the run falls
+ *  back to the filename label) rather than crashing the whole eval. */
+function loadSidecar(imagePath: string): CornerLabel | null {
+  const p = sidecarPathFor(imagePath)
+  if (!existsSync(p)) return null
+  try {
+    return parseCornerLabel(JSON.parse(readFileSync(p, 'utf8')))
+  } catch (e) {
+    console.warn(`  ⚠ ignoring malformed sidecar ${basename(p)}: ${(e as Error).message}`)
+    return null
+  }
+}
+
+/** The precision-first table: correct / honest-abstain / confidently-wrong counts
+ *  and the gated wrong-rate, per stratum and pooled. */
+function printMetrics(report: Report): void {
+  console.log('\n=== PRECISION-FIRST METRICS ===')
+  console.log('  correct = read == truth · abstain = honest retake · WRONG = confidently-wrong (gated)')
+  const row = (m: GroupMetrics): string =>
+    `  ${m.group.padEnd(13)}${String(m.total).padStart(4)}` +
+    `${String(m.correct).padStart(9)}${String(m.abstain).padStart(9)}${String(m.wrong).padStart(7)}` +
+    `${pctStr(m.rates.wrong).padStart(9)}`
+  console.log(`  ${'stratum'.padEnd(13)}${'n'.padStart(4)}${'correct'.padStart(9)}${'abstain'.padStart(9)}${'wrong'.padStart(7)}${'wrong%'.padStart(9)}`)
+  for (const m of report.byStratum) console.log(row(m))
+  console.log(`  ${'-'.repeat(49)}`)
+  console.log(row(report.overall))
+}
+
+/** The gate verdict. ADVISORY = not enforced (too few samples); FAIL sets a
+ *  non-zero exit so CI blocks. */
+function printGate(gate: GateResult): void {
+  const tag = gate.advisory ? 'ADVISORY (tolerant)' : gate.pass ? 'PASS' : 'FAIL'
+  console.log(`\n  GATE [confidently-wrong ≤ ${(gate.maxWrongRate * 100).toFixed(2)}%]: ${tag}`)
+  console.log(`    ${gate.reason}`)
+}
 
 /** Load an image and downscale it to the working size, as RGBA — the same pixels
  *  the app feeds the decoder. */
@@ -110,11 +164,11 @@ async function main(): Promise<void> {
   }
   mkdirSync(OUT, { recursive: true })
 
-  let correct = 0
-  let labelled = 0
+  const scored: ScoredItem[] = []
 
   for (const file of files) {
-    const expected = expectedFromName(file)
+    const sidecar = loadSidecar(file)
+    const label = resolveLabel(basename(file), sidecar)
     const frame = await loadFrame(file)
     const { width: dw, height: dh } = frame
 
@@ -126,16 +180,26 @@ async function main(): Promise<void> {
       writeFileSync(outPath, rawImageToCanvas(frame).toBuffer('image/png'))
     }
 
-    let mark = ''
-    if (expected) {
-      labelled++
-      const ok = matches(reading, expected)
-      if (ok) correct++
-      mark = ok ? '  ✓' : '  ✗'
+    // Score it into one of the three honest outcomes (correct / abstain / wrong),
+    // bucketed by stratum, for the precision-first report below.
+    let mark = '  (unlabelled)'
+    if (label.time) {
+      const outcome = classify(
+        {
+          reading: reading ? { hh: reading.hh, mm: reading.mm, ss: reading.ss } : null,
+          confidence: reading ? reading.confidence : null,
+        },
+        label.time,
+      )
+      const stratum = label.stratum ?? 'unstratified'
+      scored.push({ stratum, outcome })
+      const badge = outcome === 'correct' ? '✓ correct' : outcome === 'abstain' ? '∅ abstain' : '✗ WRONG'
+      mark = `  (expect ${fmt(label.time)}, ${stratum})  ${badge}`
     }
+
     const cellStr = debug.cells.map((c) => (c.kind === 'colon' ? ':' : (c.digit ?? '?'))).join('')
     const lcd = debug.lcd ? `@${debug.lcd.x},${debug.lcd.y} ${debug.lcd.w}×${debug.lcd.h}` : '—'
-    console.log(`\n=== ${basename(file)} ${expected ? `(expect ${fmt(expected)})${mark}` : ''}`)
+    console.log(`\n=== ${basename(file)}${mark}`)
     console.log(`  ${dw}×${dh}  lcd:${lcd}  note:${debug.note}  conf:${reading ? reading.confidence.toFixed(2) : '-'}`)
     console.log(`  decoded: ${reading ? fmt(reading) : 'none'}   cells:[${cellStr}]`)
     if (process.env.FRAC) {
@@ -148,7 +212,14 @@ async function main(): Promise<void> {
     console.log(`  overlay: tools/out/${basename(outPath)}`)
   }
 
-  if (labelled > 0) console.log(`\n${correct}/${labelled} read correctly.`)
+  // Precision-first report + the acceptance gate. The gate is the CI-failing
+  // assertion: a FAIL sets a non-zero exit. Tolerant (advisory) while the eval set
+  // is below the statistical floor — see evaluateGate's minSamples.
+  const report = aggregate(scored, STRATA)
+  printMetrics(report)
+  const gate = evaluateGate(report.overall)
+  printGate(gate)
+  if (!gate.pass) process.exitCode = 1
 
   await demonstrateRectification(files)
 }
