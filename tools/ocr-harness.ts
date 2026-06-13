@@ -87,10 +87,15 @@ function loadSidecar(imagePath: string): CornerLabel | null {
 }
 
 /** The precision-first table: correct / honest-abstain / confidently-wrong counts
- *  and the gated wrong-rate, per stratum and pooled. */
-function printMetrics(report: Report): void {
-  console.log('\n=== PRECISION-FIRST METRICS ===')
+ *  and the gated wrong-rate, per stratum and pooled. `title` names the set (the whole
+ *  labelled pool, or the held-out eval gold the gate runs on). */
+function printMetrics(title: string, report: Report): void {
+  console.log(`\n=== PRECISION-FIRST METRICS — ${title} ===`)
   console.log('  correct = read == truth · abstain = honest retake · WRONG = confidently-wrong (gated)')
+  if (report.overall.total === 0) {
+    console.log('  (no labelled images in this set)')
+    return
+  }
   const row = (m: GroupMetrics): string =>
     `  ${m.group.padEnd(13)}${String(m.total).padStart(4)}` +
     `${String(m.correct).padStart(9)}${String(m.abstain).padStart(9)}${String(m.wrong).padStart(7)}` +
@@ -165,6 +170,7 @@ async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true })
 
   const scored: ScoredItem[] = []
+  const scoredEval: ScoredItem[] = [] // the eval:true held-out gold — the gate's truth set
 
   for (const file of files) {
     const sidecar = loadSidecar(file)
@@ -192,9 +198,12 @@ async function main(): Promise<void> {
         label.time,
       )
       const stratum = label.stratum ?? 'unstratified'
-      scored.push({ stratum, outcome })
+      const item: ScoredItem = { stratum, outcome }
+      scored.push(item)
+      const isEval = sidecar?.eval === true
+      if (isEval) scoredEval.push(item)
       const badge = outcome === 'correct' ? '✓ correct' : outcome === 'abstain' ? '∅ abstain' : '✗ WRONG'
-      mark = `  (expect ${fmt(label.time)}, ${stratum})  ${badge}`
+      mark = `  (expect ${fmt(label.time)}, ${stratum}, ${isEval ? 'eval' : 'seed'})  ${badge}`
     }
 
     const cellStr = debug.cells.map((c) => (c.kind === 'colon' ? ':' : (c.digit ?? '?'))).join('')
@@ -212,12 +221,17 @@ async function main(): Promise<void> {
     console.log(`  overlay: tools/out/${basename(outPath)}`)
   }
 
-  // Precision-first report + the acceptance gate. The gate is the CI-failing
-  // assertion: a FAIL sets a non-zero exit. Tolerant (advisory) while the eval set
-  // is below the statistical floor — see evaluateGate's minSamples.
-  const report = aggregate(scored, STRATA)
-  printMetrics(report)
-  const gate = evaluateGate(report.overall)
+  // Precision-first report + the acceptance gate. Two tables: the whole labelled
+  // pool (context), then the HELD-OUT EVAL GOLD (eval:true) — the gate runs on the
+  // gold, the precision-first truth set, never on the training seed (grading on data
+  // the model will train on flatters the result; PLAN "eval = real only, held out").
+  // The gate is the CI-failing assertion: a FAIL sets a non-zero exit. Tolerant
+  // (advisory) while the gold is below the statistical floor — see evaluateGate.
+  const reportAll = aggregate(scored, STRATA)
+  const reportEval = aggregate(scoredEval, STRATA)
+  printMetrics('ALL LABELLED (eval gold + training seed)', reportAll)
+  printMetrics('EVAL GOLD — held out, the precision-first gate set', reportEval)
+  const gate = evaluateGate(reportEval.overall)
   printGate(gate)
   if (!gate.pass) process.exitCode = 1
 
