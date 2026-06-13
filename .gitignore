@@ -18,6 +18,11 @@ dist-ssr/
 tools/local/
 tools/out/
 
+# Augmentation output: derived hard-condition TRAINING variants (issue #7). Never
+# committed — they are distortions of (gitignored) source photos; only code +
+# trained weights ship. Re-generate with `npm run augment`.
+tools/training/
+
 # Fixture images: CC-licensed test photos are NOT redistributed from this repo —
 # re-fetch them from the Commons URLs in tools/fixtures/CREDITS.md (the repo stays
 # scrupulously CC-only / image-free; only code and trained weights are committed).
