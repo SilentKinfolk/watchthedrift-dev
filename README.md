@@ -39,10 +39,10 @@ labelled images.
 ```sh
 npm install        # or: npm ci
 npm run dev        # http://localhost:5173 (a secure context, so the camera works)
-npm test           # unit tests (Vitest): drift, time-sync, parser
+npm test           # unit tests (Vitest): drift, time-sync, parser, eval metric + label schema
 npm run build      # type-check (tsc) + production build to dist/
 npm run size       # first-load byte-budget gate (run after build; needs dist/)
-npm run harness    # run the segment decoder over tools/fixtures + tools/local, score, write overlays
+npm run harness    # score the decoder over tools/fixtures + tools/local (precision-first metric + gate), write overlays
 ```
 
 > The camera (`getUserMedia`) only works over HTTPS or on `localhost`. Test on a phone
@@ -56,7 +56,8 @@ npm run harness    # run the segment decoder over tools/fixtures + tools/local, 
 
 Pushing to `main` builds the site and deploys it to the **preview** GitHub Pages
 environment via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). CI
-(typecheck + build + tests + the first-load byte-budget gate) gates every push and PR.
+(typecheck + build + tests + the first-load byte-budget gate + the precision-first
+eval gate) gates every push and PR.
 
 ### First-load byte budget (≤ ~5 MB)
 
@@ -74,6 +75,21 @@ lands — issue #9 registers it there). Lazy/passthrough files that aren't fetch
 first load — today the *unwired* Tesseract data (`dist/traineddata/`, removed in
 issue #11) — don't count, but are listed and **flagged if large**, so a forgotten
 eager asset can't silently slip the gate.
+
+### Precision-first eval gate (confidently-wrong ≤ ~0.5%)
+
+"Honest — fail to a retake rather than guess" is an invariant, so the acceptance
+metric **leads with a confidently-wrong ceiling**, not headline accuracy. The
+harness (`npm run harness`) scores every read into one of three outcomes — *correct*,
+*honest abstain → retake*, or *confidently-wrong* (the cardinal sin) — per
+difficulty stratum (easy/moderate/hard) and overall, then evaluates the gate:
+confidently-wrong ≤ ~0.5% over the pooled answers. It is **advisory while the eval
+set is tiny** (< ~200 samples, where a 0.5% rate is statistically meaningless) and
+**fails CI** once the set is large enough and the ceiling is breached. The gate
+logic is unit-tested in [`src/eval/metrics.test.ts`](src/eval/metrics.test.ts), so
+CI guards it today regardless of how many images are committed. Labels live in a
+shared **corner-label sidecar** schema — see
+[`docs/eval-labels.md`](docs/eval-labels.md).
 
 ## Privacy
 
