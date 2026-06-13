@@ -51,7 +51,7 @@ export function offsetFromSamples(
   }
 }
 
-interface ChainEntry {
+export interface ChainEntry {
   id: SourceId
   fetch: (signal: AbortSignal) => Promise<TimeSample>
 }
@@ -69,6 +69,13 @@ export interface SyncOptions {
 
 export class TimeSync {
   private offset: TimeOffset | null = null
+  private readonly chain: ChainEntry[]
+
+  /** The source chain defaults to the live network sources, tried in order;
+   *  tests inject fakes to drive failover and degradation deterministically. */
+  constructor(chain: ChainEntry[] = CHAIN) {
+    this.chain = chain
+  }
 
   /** Sample the source chain and store the best offset. Always resolves: if
    *  every network source fails it falls back to the device clock (degraded). */
@@ -76,7 +83,7 @@ export class TimeSync {
     const samples = opts.samples ?? 5
     const timeoutMs = opts.timeoutMs ?? 3000
 
-    for (const src of CHAIN) {
+    for (const src of this.chain) {
       const raw: RawSample[] = []
       let failures = 0
       for (let i = 0; i < samples; i++) {
