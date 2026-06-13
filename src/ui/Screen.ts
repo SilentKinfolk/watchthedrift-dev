@@ -1,6 +1,7 @@
 import { Camera, type CameraError } from '../camera/Camera'
 import { TimeSync } from '../time/TimeSync'
-import { SegmentDecoderRecognizer } from '../recognize/SegmentDecoderRecognizer'
+import { RectifyingSegmentRecognizer } from '../recognize/RectifyingSegmentRecognizer'
+import { manualCornerSource } from '../recognize/corners'
 import { drawDecodeOverlay } from '../recognize/overlay'
 import { preprocess } from '../recognize/preprocess'
 import { TIME_CROP, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
@@ -27,7 +28,12 @@ export class Screen {
   // on-screen box) and it locates + locally re-thresholds the LCD within that
   // crop. Cropping tight keeps binarisation clean — feeding the whole frame let a
   // bright background skew the threshold and read an off-angle face as all-black.
-  private readonly recognizer = new SegmentDecoderRecognizer()
+  //
+  // The decoder now sits behind the rectification stage (#4): given the LCD's four
+  // corners it reads a frontal, straightened crop. The corner source is a throwaway
+  // stub for now (manual `?corners=` override) and returns null otherwise, so with
+  // no override this is identical to feeding the raw crop straight to v1.
+  private readonly recognizer = new RectifyingSegmentRecognizer(manualCornerSource())
   private readonly debug = isDebug()
 
   private state: State = 'idle'
