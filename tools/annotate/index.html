@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>watchthedrift — F-91W corner annotator (dev tool)</title>
+    <!-- DEV-ONLY tool (issue #8). NOT part of the app build: `vite build` only
+         bundles the root index.html, so this page never ships and never counts
+         against the first-load byte budget. Serve it with `npm run dev` and open
+         /watchthedrift-dev/tools/annotate/index.html. It is the point-and-click
+         shell over the SAME pure core (src/eval/annotate.ts) the annotate CLI uses. -->
+    <style>
+      :root { color-scheme: light; }
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 920px; margin: 1.5rem auto; padding: 0 1rem; color: #000; }
+      h1 { font-size: 1.25rem; } h2 { font-size: 1rem; margin-top: 1.5rem; }
+      .hint { color: #444; }
+      #canvas { max-width: 100%; height: auto; border: 1px solid #000; cursor: crosshair; display: block; margin: 0.5rem 0; }
+      .controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+      fieldset { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; border: 1px solid #ccc; }
+      label { display: inline-flex; gap: 0.35rem; align-items: center; }
+      input[type='text'], input:not([type]), select { font: inherit; padding: 0.15rem 0.3rem; }
+      button { font: inherit; padding: 0.25rem 0.6rem; cursor: pointer; }
+      button:disabled { cursor: default; opacity: 0.5; }
+      pre { background: #f4f4f4; border: 1px solid #ccc; padding: 0.6rem; overflow: auto; min-height: 1.5rem; }
+      .error { color: #b00; font-weight: 600; min-height: 1.2rem; }
+      #status { font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <h1>F-91W corner annotator <span class="hint">— dev tool (issue #8)</span></h1>
+    <p class="hint">
+      Load a photo, click the <strong>4 LCD corners</strong> in any order (they get
+      canonicalised to TL,TR,BR,BL), enter the time, then build the corner-label
+      sidecar. Download it next to the image as <code>&lt;image&gt;.json</code>.
+    </p>
+
+    <input type="file" id="file" accept="image/*" />
+    <canvas id="canvas" width="640" height="360"></canvas>
+    <div class="controls">
+      <button id="undo" type="button">Undo point</button>
+      <button id="clear" type="button">Clear points</button>
+      <span id="status">0/4 corners</span>
+    </div>
+
+    <fieldset>
+      <label>Time <input type="text" id="time" placeholder="HH:MM:SS (or blank → filename)" size="22" /></label>
+      <label><input type="checkbox" id="is24h" checked /> 24-hour</label>
+      <label>
+        Stratum
+        <select id="stratum">
+          <option value="">(none)</option>
+          <option value="easy">easy</option>
+          <option value="moderate">moderate</option>
+          <option value="hard">hard</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="eval" /> held-out eval gold</label>
+      <label>Note <input type="text" id="note" size="28" /></label>
+    </fieldset>
+
+    <button id="build" type="button">Build sidecar</button>
+    <p class="error" id="error"></p>
+
+    <h2>Sidecar <span class="hint" id="outname"></span></h2>
+    <pre id="out"></pre>
+    <div class="controls">
+      <button id="download" type="button" disabled>Download .json</button>
+      <button id="copy" type="button" disabled>Copy</button>
+    </div>
+
+    <script type="module" src="./annotate-ui.ts"></script>
+  </body>
+</html>
