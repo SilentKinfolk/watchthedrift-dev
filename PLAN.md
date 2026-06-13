@@ -131,15 +131,17 @@ real photos gives true LCD photoreality for free.)
   (held out, never augmented) = real photos only, weighted to the genuinely hard
   ones.** Grading on your own augmentations flatters the model; the hunted hard
   reals are most valuable as the **eval gold set**.
-- **Collection is agent-doable (decision, per build-out 2026-06-13).** A
-  **license-aware harvester** queries open CC/PD sources (Wikimedia Commons +
-  Openverse APIs; Flickr-CC) for "Casio F-91W", keeps only CC-BY / CC-BY-SA /
-  CC0 / PD, records `url` / `license` / `credit`, and downloads into gitignored
-  `tools/local/` (the harness already scans it) with the filename time convention.
-  The agent stratifies each real photo (easy / moderate / hard) by eye. *Residual
-  reality, not an agent limitation:* the open web skews easy, so genuinely-hard
-  reals stay scarce — augmentation fills the **training** hard strata, but
-  **eval-gold hard reals cannot be manufactured** (top-risk #1).
+- **Collection is agent-doable (decision, per build-out 2026-06-13).** A harvester
+  collects real F-91W photos from across the open web (Wikimedia Commons +
+  Openverse APIs; Flickr; image search) into gitignored `tools/local/` (the harness
+  already scans it) with the filename time convention, recording
+  `url` / `license` / `credit` as **provenance** for every image. It does **not**
+  filter to CC-only — for a gitignored, never-redistributed *training* corpus that
+  constraint isn't required and needlessly starves the make-or-break data risk (see
+  Rights). The agent stratifies each real photo (easy / moderate / hard) by eye.
+  *Residual reality, not an agent limitation:* the open web skews easy, so
+  genuinely-hard reals stay scarce — augmentation fills the **training** hard
+  strata, but **eval-gold hard reals cannot be manufactured** (top-risk #1).
 - **Annotation is agent-assisted + human spot-check.** The 4-corner sidecar is
   written by a vision-capable agent eyeballing the LCD corners (via the existing
   `buildCornerLabel`), with a **human spot-check on a sample** — corners are the
@@ -153,9 +155,24 @@ real photos gives true LCD photoreality for free.)
   (`metrics.ts` enforces only at ≥ 200 pooled samples; the hard *stratum* needs
   its own sufficiency call). If the web yields too few, the gate stays advisory and
   **we say so** rather than fabricate confidence.
-- **Rights.** Filename time convention (`*_HH-MM-SS_24h.jpg`, per the v1 harness).
-  Collected images stay **gitignored / un-redistributed** (repo is scrupulously
-  CC-only); **only trained weights ship**.
+- **Rights — the line is *redistribution*, not training (revised 2026-06-13).**
+  Two tiers, because they carry different risk:
+  - **Local training corpus (gitignored):** *any* source. Training a tiny,
+    non-generative net (a corner regressor / per-digit classifier that provably
+    cannot reconstruct its inputs) on web images that **never leave the machine and
+    are never shipped** is low-risk, with a reasonable fair-use / research-TDM
+    footing. The law here is unsettled, not settled-against; this is a deliberate,
+    eyes-open call (not legal advice) — and **only trained weights ship**, which is
+    what keeps it clean.
+  - **Anything committed / redistributed** (the example fixtures, and any
+    CI-reproducible slice of the eval gold): **CC-BY / CC-BY-SA / CC0 / PD only**,
+    with attribution in the sidecar `source`. This is the bright line — a
+    copyrighted image *in the repo* is redistribution.
+  - *Consequence for eval:* commit a CC/PD eval subset so CI and others reproduce
+    the gate; keep a larger non-CC eval set local-only for the operator's own
+    stronger validation (documented as not-reproducible-in-CI).
+  - Filename time convention `*_HH-MM-SS_24h.jpg` (per the v1 harness). Respect site
+    ToS / robots when harvesting — a contract layer separate from copyright.
 
 ## Success metric (acceptance gate)
 
@@ -321,9 +338,10 @@ order. Slices 1–3 are the spine already in `main`; the rest are all agent-doab
    model+runtime asset. Unit-tested against a **dummy blob** → **proves the ≤ 5 MB
    budget with no trained model**. [agent; needs no data] *(the prototype already
    greenlit.)*
-5. **Data collection — CC/PD harvester + corpus** — license-aware harvester,
-   provenance sidecars, agent-assisted corner annotation + human spot-check,
-   stratified real eval-gold. [agent + spot-check] *(parallel with 4.)*
+5. **Data collection — web harvester + corpus** — broad harvester (any source for
+   the gitignored training corpus; licence recorded as provenance, CC/PD flagged
+   for the committed / eval subset), agent-assisted corner annotation + human
+   spot-check, stratified real eval-gold. [agent + spot-check] *(parallel with 4.)*
 6. **Corner detector — train · export · integrate · isolation-eval** — numpy
    trainer → int8 blob; drop weights into slice-4's `CornerSource`; corner-error
    metric in isolation on the eval gold. [agent; needs 4 + 5] *(the honest split of
@@ -342,11 +360,13 @@ order. Slices 1–3 are the spine already in `main`; the rest are all agent-doab
 
 ## Top risks (carry into the PRD)
 
-1. **Hard-case eval data is make-or-break** — without credible *real* hard-stratum
-   photos, the precision-first gate stays advisory. The agent harvester (slice 5)
-   collects what the open web has, but it skews easy; the residual scarcity is a
-   data-world fact, mitigated by honest advisory-gating, not by augmentation (which
-   is training-only). Highest risk.
+1. **Hard-case eval data is make-or-break** — without enough credible *real*
+   hard-stratum photos, the precision-first gate stays advisory. Relaxing
+   collection to any-source (Rights) widens the pool — including a larger
+   local-only eval set — but the open web still skews easy, so genuinely-hard reals
+   stay scarce; augmentation fills *training* only, never eval, and the committed
+   CI-reproducible eval slice is further bounded to CC/PD. Mitigated by honest
+   advisory-gating, not by manufacturing data. Highest risk.
 2. **Annotation precision** — agent-estimated corners are lower-precision than
    human clicks, and corners are the bottleneck (#3). Guard: human spot-check on a
    sample + the in-isolation corner-error metric.
@@ -381,3 +401,6 @@ The forks `/grill-me` should resolve before `/to-prd` → `/to-issues`:
    activation ranges?
 7. **Weights format:** bespoke binary + manifest vs a *minimal ONNX subset* read by
    our own micro-reader (trainer interop vs simplicity).
+8. **Data-rights policy:** ratify "train-local on any source, redistribute CC/PD
+   only" (and your jurisdiction's stance) — or tighten to CC-only if you'd rather
+   be conservative than maximise the hard-data pool.
