@@ -1,0 +1,56 @@
+name: Dependabot auto-merge
+
+# Auto-merges Dependabot PRs once CI is green, then redeploys the site.
+#
+# Why triggered on `workflow_run` (after CI) rather than on the PR directly:
+#   - A workflow_run job runs on the DEFAULT branch with a full read/write token
+#     and secrets access — the supported, safe way to act on a Dependabot PR
+#     (the PR-triggered run itself only gets a read-only token).
+#   - It naturally fires only once CI has finished, so we can gate on its result.
+#
+# Why we dispatch the deploy explicitly at the end: a merge made with the
+# built-in GITHUB_TOKEN does NOT re-trigger `on: push` workflows (GitHub's
+# anti-recursion rule), so the Pages deploy would otherwise never run. A
+# workflow_dispatch is the documented exception — it DOES start the deploy.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write # merge the PR
+  pull-requests: write # mark/merge the PR
+  actions: write # dispatch the deploy workflow
+
+jobs:
+  merge-and-deploy:
+    runs-on: ubuntu-latest
+    # Only for a Dependabot PR whose CI passed.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Find the Dependabot PR for this CI run
+        id: pr
+        run: |
+          # The job-level `if` already guarantees this CI run was for a Dependabot
+          # PR; its head branch is unique to that one PR, so just take the open PR
+          # on it. (Don't filter on author.login — gh reports it as "app/dependabot",
+          # not "dependabot[bot]", which silently matched nothing the first time.)
+          number=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+            --json number --jq '.[0].number // ""')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #${number:-<none>} for branch '$BRANCH'"
+
+      - name: Squash-merge it
+        if: steps.pr.outputs.number != ''
+        run: gh pr merge "${{ steps.pr.outputs.number }}" --repo "$REPO" --squash --delete-branch
+
+      - name: Deploy the merged result to Pages
+        if: steps.pr.outputs.number != ''
+        run: gh workflow run "Deploy to GitHub Pages" --repo "$REPO" --ref main

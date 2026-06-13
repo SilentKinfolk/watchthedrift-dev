@@ -1,0 +1,29 @@
+# Dependabot keeps our dependencies — and the GitHub Actions we pin — current,
+# and patches known vulnerabilities. Version updates run on the weekly schedule
+# below; *security* updates are opened the moment an advisory lands (that half is
+# switched on in repo settings, not here). Every PR it opens is validated by CI
+# (.github/workflows/ci.yml) and, if green, auto-merged and deployed by
+# .github/workflows/dependabot-auto-merge.yml — so this is genuinely set-and-forget.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Roll all non-major npm bumps into ONE PR to cut noise. Majors are left
+      # out of the group so each lands as its own PR — isolated CI run, and easy
+      # to spot or revert if a breaking change ever slips through the tests.
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      # Action version bumps are low-risk; group them all (including majors).
+      github-actions:
+        patterns: ["*"]

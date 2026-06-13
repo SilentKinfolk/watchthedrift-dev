@@ -1,0 +1,26 @@
+name: CI
+
+# Validates every push to main and every PR (including Dependabot's) by building
+# exactly as the deploy does and running the unit tests. This is the gate the
+# auto-merge waits on: a dependency bump that breaks the build or the tests stays
+# unmerged, so the live site keeps running the last good version.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build # tsc typecheck + vite production build (same as deploy)
+      - run: npm test # Vitest (drift, time-sync, parser)
