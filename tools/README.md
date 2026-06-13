@@ -81,6 +81,53 @@ samples — a 0.5% rate is meaningless on a handful of images — and a real FAI
 committed eval data exists. The gate *logic* is also unit-tested in Vitest, which
 runs in CI today.
 
+## Augmentation pipeline (issue #7)
+
+`augment.ts` turns **clean, labelled** F-91W photos into **hard-condition training
+variants**, carrying the labels through each warp. It distorts **real pixels** (it
+never renders), so the LCD stays photoreal and the labels transform automatically:
+the displayed time is unchanged, and the 4 LCD corners follow the perspective warp —
+which also yields corner labels for the augmented data (PLAN decision #5).
+
+```sh
+npm run augment                          # all recipes over tools/fixtures + tools/local
+npm run augment -- --recipes dim,glare   # a subset
+npm run augment -- --seed 7 --max 1024 --out tools/training
+npm run augment -- --help                # all flags
+```
+
+The five transform families (composable; see `DEFAULT_RECIPES` in
+[`../src/augment/augment.ts`](../src/augment/augment.ts)):
+
+| Recipe | Family | Simulates |
+| --- | --- | --- |
+| `angle` | perspective warp | off-square / off-centre framing (**moves the corners**) |
+| `dim` | low-light gamma | a dim room, no LCD backlight |
+| `glare` | radial highlight | a reflection washing out part of the glass |
+| `blur` | box blur | motion / defocus from a hand-held shot |
+| `faded` | segment-fade | faint / aged segments (lifts only the dark ink) |
+| `dim-angle`, `glare-angle` | composites | the real world stacks dimness/glare onto an angle |
+
+Each variant is written as `<stem>__<recipe>.png` plus a corner-label
+**sidecar** (`<stem>__<recipe>.png.json`, the same schema as
+[`../docs/eval-labels.md`](../docs/eval-labels.md)): the time/`is24h` carry through
+unchanged, the `corners` are the transformed ones (or `null` when the source had
+none — honest, never fabricated), the `stratum` is the difficulty the recipe pushes
+into, `eval` is forced `false`, and provenance is preserved.
+
+- **Deterministic.** A given `(--seed, image, recipe)` always produces the same
+  bytes (randomness is a seeded PRNG, never `Math.random`). The stochastic recipes
+  (`angle`, `glare`) vary with `--seed`; the photometric ones are fixed.
+- **Eval is protected.** Images marked `eval: true` are **skipped by default** — the
+  held-out gold set is never augmented (grading on our own distortions flatters the
+  model). `--include-eval` overrides this for ad-hoc experimentation only.
+- **Output is gitignored.** Variants land in `tools/training/` (gitignored): they are
+  distortions of (gitignored) source photos — only code and trained weights ship.
+  Re-generate them any time with `npm run augment`.
+
+The label-transform maths (corners through a known warp) are unit-tested in
+[`../src/augment/augment.test.ts`](../src/augment/augment.test.ts), which runs in CI.
+
 #### Recorded baseline — v1 decoder over the current fixtures
 
 | stratum | n | correct | abstain | wrong | wrong % |
