@@ -1,0 +1,14 @@
+# Node
+node_modules/
+dist/
+
+# Build-loop runner state (scripts/issue-loop.sh)
+.loop-logs/
+.loop-state
+.loop-stop
+
+# Local-only Claude Code settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
