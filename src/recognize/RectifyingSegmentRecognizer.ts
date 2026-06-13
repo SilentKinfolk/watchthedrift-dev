@@ -1,7 +1,7 @@
-import type { Recognizer, Recognized, RecognizeInput } from './Recognizer'
-import { decodeSegments, type DecodeDebug, type DecodeResult } from './segments'
-import { rectify, rectifiedSize, type Quad, type RawImage } from './rectify'
-import type { CornerSource } from './corners'
+import type { Recognizer, Recognized, RecognizeInput } from './Recognizer.ts'
+import { decodeSegments, type DecodeDebug, type DecodeResult } from './segments.ts'
+import { rectify, rectifiedSize, type Quad, type RawImage } from './rectify.ts'
+import type { CornerSource } from './corners.ts'
 
 // The rectification stage (issue #4): insert the geometry step in front of the v1
 // segment decoder so it reads a frontal, straightened LCD instead of the raw
@@ -45,8 +45,11 @@ export class RectifyingSegmentRecognizer implements Recognizer {
   /** Debug from the most recent decode, for the ?debug=1 overlay (same shape the
    *  SegmentDecoderRecognizer exposes, so the debug view is unchanged). */
   lastDebug: DecodeDebug | null = null
+  private readonly cornerSource: CornerSource
 
-  constructor(private readonly cornerSource: CornerSource) {}
+  constructor(cornerSource: CornerSource) {
+    this.cornerSource = cornerSource
+  }
 
   async init(): Promise<void> {}
 

@@ -10,7 +10,7 @@
 // constructor) and delete this file — nothing else changes.
 // ────────────────────────────────────────────────────────────────────────────
 
-import type { Quad } from './rectify'
+import type { Quad } from './rectify.ts'
 
 /** Supplies the four LCD corners for a frame of the given size, or null when it
  *  has nothing (→ the recognizer reads the raw crop, unchanged). The learned
