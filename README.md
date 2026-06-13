@@ -41,6 +41,7 @@ npm install        # or: npm ci
 npm run dev        # http://localhost:5173 (a secure context, so the camera works)
 npm test           # unit tests (Vitest): drift, time-sync, parser
 npm run build      # type-check (tsc) + production build to dist/
+npm run size       # first-load byte-budget gate (run after build; needs dist/)
 npm run harness    # run the segment decoder over tools/fixtures + tools/local, score, write overlays
 ```
 
@@ -55,7 +56,24 @@ npm run harness    # run the segment decoder over tools/fixtures + tools/local, 
 
 Pushing to `main` builds the site and deploys it to the **preview** GitHub Pages
 environment via [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). CI
-(typecheck + build + tests) gates every push and PR.
+(typecheck + build + tests + the first-load byte-budget gate) gates every push and PR.
+
+### First-load byte budget (≤ ~5 MB)
+
+watchthedrift is zero-install, so it must stay a light download. CI runs
+[`scripts/check-bundle-size.mjs`](scripts/check-bundle-size.mjs) (`npm run size`)
+after the build and **fails if the first-load payload exceeds ~5 MB** — the budget
+PLAN.md fixes for the on-device models + runtime. The threshold is one constant
+(`BUDGET_BYTES`); the pass/fail logic is unit-tested in `scripts/bundle-budget.test.ts`.
+
+**What counts as first-load** (the bytes the browser downloads to show the screen
+and do the first reading): the entry `index.html`, the bundled app under
+`dist/assets/**` (JS/CSS + any chunks), and any model/runtime asset the app fetches
+at runtime that is declared in `EAGER_RUNTIME_ASSETS` (empty until the first model
+lands — issue #9 registers it there). Lazy/passthrough files that aren't fetched at
+first load — today the *unwired* Tesseract data (`dist/traineddata/`, removed in
+issue #11) — don't count, but are listed and **flagged if large**, so a forgotten
+eager asset can't silently slip the gate.
 
 ## Privacy
 
