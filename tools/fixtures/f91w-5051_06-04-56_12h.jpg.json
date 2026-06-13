@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "stratum": "hard",
+  "eval": true,
+  "source": {
+    "url": "https://commons.wikimedia.org/wiki/File:Casio_F-91W_5051.jpg",
+    "license": "CC-BY-SA-3.0",
+    "credit": "Ashley Pomeroy"
+  },
+  "note": "Small offset seconds digit under tight 12h framing. v1 ABSTAINS (no reading) — an honest fail-to-retake, not a wrong answer. Time from the filename (06-04-56, 12h)."
+}
