@@ -95,8 +95,11 @@ function parseArgs(argv: string[]): Opts | null {
   return { inDirs: dirs.filter(existsSync), outDir, seed, max, recipes, includeEval, limit }
 }
 
-/** Load an image and downscale its longest side to `max`, as an RGBA RawImage. */
-async function loadFrame(file: string, max: number): Promise<RawImage> {
+/** Load an image and downscale its longest side to `max`. Returns the RGBA image AND
+ *  the scale applied — the caller maps the full-resolution sidecar corners (the schema
+ *  stores them in the image's OWN resolution) into this working resolution, because
+ *  the geometric recipes warp corners in image-pixel space, so the two must match. */
+async function loadFrame(file: string, max: number): Promise<{ frame: RawImage; scale: number }> {
   const img = await loadImage(file)
   const longest = Math.max(img.width, img.height)
   const scale = longest > max ? max / longest : 1
@@ -105,7 +108,7 @@ async function loadFrame(file: string, max: number): Promise<RawImage> {
   const c = createCanvas(width, height)
   const ctx = c.getContext('2d')
   ctx.drawImage(img, 0, 0, width, height)
-  return { data: ctx.getImageData(0, 0, width, height).data, width, height }
+  return { frame: { data: ctx.getImageData(0, 0, width, height).data, width, height }, scale }
 }
 
 function writePng(img: RawImage, outPath: string): void {
@@ -131,6 +134,12 @@ function loadSidecar(imagePath: string): CornerLabel | null {
 const round2 = (n: number): number => Math.round(n * 100) / 100
 const roundCorners = (c: Corners): Corners =>
   c.map((p) => ({ x: round2(p.x), y: round2(p.y) })) as unknown as Corners
+
+/** Map corners from the source image's own resolution into the (possibly downscaled)
+ *  working resolution `loadFrame` produced, so they track the pixels the geometric
+ *  recipes warp. A no-op when the image wasn't downscaled (scale === 1). */
+const scaleCorners = (c: Corners, scale: number): Corners =>
+  c.map((p) => ({ x: p.x * scale, y: p.y * scale })) as unknown as Corners
 
 /** Build the variant's sidecar: the time/is24h carry through unchanged, the corners
  *  are the transformed ones (or null when the source had none), the stratum is the
@@ -200,13 +209,16 @@ async function main(): Promise<void> {
     }
     processed++
 
-    const frame = await loadFrame(file, opts.max)
+    const { frame, scale } = await loadFrame(file, opts.max)
+    // Corners are stored full-res; map them into the working resolution we just
+    // downscaled to, so the geometric recipes warp them in the same pixel space.
+    const srcCorners = label.corners ? scaleCorners(label.corners, scale) : null
     const stem = name.replace(IMG_RE, '')
     const haveCorners = label.corners ? 'corners' : 'no-corners'
     console.log(`\n• ${name}  ${frame.width}×${frame.height}  ${fmt(label.time)}  ${haveCorners}`)
     for (const recipe of opts.recipes) {
       const rng = makeRng(hashSeed(opts.seed, name, recipe.name))
-      const state = recipe.build({ image: frame, corners: label.corners }, rng)
+      const state = recipe.build({ image: frame, corners: srcCorners }, rng)
       const outStem = `${stem}__${recipe.name}`
       writePng(state.image, join(opts.outDir, `${outStem}.png`))
       const meta = variantSidecar(state, recipe, { time: label.time, is24h: label.is24h, source: sidecar?.source }, name)

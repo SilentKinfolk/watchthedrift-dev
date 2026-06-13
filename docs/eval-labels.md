@@ -5,8 +5,9 @@ is defined once, in code, at [`src/eval/label.ts`](../src/eval/label.ts) (schema
 parsing) and [`src/eval/metrics.ts`](../src/eval/metrics.ts) (scoring), and targeted
 by three pieces of the pipeline:
 
-- the **corner-annotation tool** (#8) *writes* sidecars (click the 4 LCD corners +
-  enter the time),
+- the **corner-annotation tool** (#8) *writes* sidecars — a browser page (click the
+  4 LCD corners + enter the time) and a `npm run annotate` CLI, both over one
+  validated core ([`src/eval/annotate.ts`](../src/eval/annotate.ts)),
 - the **augmentation pipeline** (#7) *reads* corners + time and *transforms* them
   through each warp (corners follow the homography; the digits are unchanged),
 - the **harness** (#5, [`tools/ocr-harness.ts`](../tools/ocr-harness.ts)) *reads*
@@ -68,6 +69,26 @@ honest), but a **confidently-wrong** read on a hard image is **not** — it stil
 counts against the gate. The eval gold set is **weighted toward hard** and is held
 out **un-augmented** (grading on our own distortions would flatter the model).
 
+## Eval gold vs training seed
+
+Each labelled real is one or the other, by its `eval` flag:
+
+- **Eval gold (`eval: true`)** — the held-out truth set the precision gate scores.
+  Weighted to **hard** (the hunted hard reals are the highest-value eval images, and
+  a precision-first gate is most honest measured on them, not flattered by easy
+  reals). **Never augmented** (the augmentation pipeline skips them).
+- **Training seed (`eval: false`)** — clean reals the augmentation pipeline (#7)
+  expands into hard training variants for the corner detector (#9) and reader (#10).
+
+With the four committed CC fixtures this lands as: `front-closeup` + `5051` = eval
+gold (both hard); `time-noretouch` (clean, timed) = the augmentation seed;
+`all-segments` (no real time) = a corner/detection card. There is exactly **one**
+clean+timed CC real, so it must be EITHER easy-eval OR the augment seed — seed wins,
+because augmentation is load-bearing for #9 and a precision gate is more honest on
+the hard gold. The easy/moderate **eval** gap (no CC moderate-angle real to hand) is
+filled by collecting reals into `tools/local/` and annotating them; the harness
+buckets by stratum, so new strata light up as they are added.
+
 ## The precision-first metric
 
 Every scored read is one of three outcomes:
@@ -99,9 +120,10 @@ sample count crosses the floor. This is the "wired but tolerant" knob.
   which runs in CI — so the gate *logic* (it fails above the ceiling once there are
   enough samples) is guaranteed by CI today, deterministically, with no images or
   model loaded.
-- **The harness** computes the metric over real images and **exits non-zero on a
-  (non-advisory) gate FAIL**. CI runs `npm run harness`, so the gate fires over any
-  *committed* eval fixtures the moment enough exist.
+- **The harness** prints two precision-first tables — **all labelled** (context) and
+  the **held-out eval gold** — and runs the gate on the **eval gold**, exiting
+  non-zero on a (non-advisory) FAIL. CI runs `npm run harness`, so the gate fires
+  over the *committed* eval gold the moment enough of it exists.
 
 > **CI vs local coverage.** Only redistributable (CC/PD) fixtures are committed, so
 > CI gates on that committable subset. Collected, non-redistributable hard reals

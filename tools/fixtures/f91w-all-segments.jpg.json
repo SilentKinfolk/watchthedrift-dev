@@ -1,5 +1,23 @@
 {
   "version": 1,
+  "corners": [
+    {
+      "x": 890,
+      "y": 1114
+    },
+    {
+      "x": 2134,
+      "y": 1114
+    },
+    {
+      "x": 2134,
+      "y": 1674
+    },
+    {
+      "x": 890,
+      "y": 1674
+    }
+  ],
   "eval": false,
   "source": {
     "url": "https://commons.wikimedia.org/wiki/File:Casio_F-91W_watch_(2023)_(front_closeup_-all_segments).jpg",

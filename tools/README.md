@@ -52,9 +52,10 @@ something_09-05-30_12h.png → expect 09:05:30, 12-hour mode
 
 For richer labels — a difficulty **stratum**, the 4 LCD **corners**, provenance —
 drop a **corner-label sidecar** beside the image: `foo.jpg` → `foo.jpg.json`. The
-sidecar wins where present; the filename is the fallback for the time. This is the
-one schema the annotation tool (#8) and the augmentation pipeline (#7) also target
-— see [`../docs/eval-labels.md`](../docs/eval-labels.md) for the full schema and the
+sidecar wins where present; the filename is the fallback for the time. Write these
+with the **corner-annotation tool** (below, #8); it is the one schema the
+augmentation pipeline (#7) also targets — see
+[`../docs/eval-labels.md`](../docs/eval-labels.md) for the full schema and the
 `easy` / `moderate` / `hard` stratum definitions. Minimal example (stratum only;
 time stays on the filename):
 
@@ -80,6 +81,40 @@ samples — a 0.5% rate is meaningless on a handful of images — and a real FAI
 **non-zero exit**, so `npm run harness` is a CI-failing assertion once enough
 committed eval data exists. The gate *logic* is also unit-tested in Vitest, which
 runs in CI today.
+
+## Corner-annotation tool (issue #8)
+
+Write or update the **corner-label sidecar** for a real photo — "click the 4 LCD
+corners + enter the time". Two shells over one pure, unit-tested core
+([`../src/eval/annotate.ts`](../src/eval/annotate.ts)): clicks (GUI) or flags (CLI)
+become four points, the core canonicalises them to **TL,TR,BR,BL** and validates the
+whole record, so a malformed sidecar can never be written.
+
+**Browser (point-and-click).** Serve the dev page and click the corners:
+
+```sh
+npm run dev   # then open /watchthedrift-dev/tools/annotate/index.html
+```
+
+Load a photo, click the four corners in any order (overlaid as TL/TR/BR/BL so you can
+check the assignment), set time / 24h / stratum / eval / note, hit **Build**, and
+download `<image>.json` to sit beside the image. Dev-only — `vite build`'s single
+input is the root `index.html`, so this page never ships and never touches the
+first-load byte budget.
+
+**CLI (headless / scriptable).** The same core, for batch or scripted annotation:
+
+```sh
+# seed corners from the v1 LCD box (a rough front-on label, refine in the GUI)
+npm run annotate -- --image tools/fixtures/foo.jpg --auto --stratum easy --seed
+# or give the four corners explicitly — 8 pixel numbers, ANY order
+npm run annotate -- --image tools/fixtures/foo.jpg \
+    --corners 780,1032,2400,1032,2400,1672,780,1672 --time 15:53:08 --eval --stratum hard
+npm run annotate -- --help
+```
+
+Every flag **merges** onto the existing sidecar, so you can add corners without
+losing a stratum/source/note already there. `--dry-run` prints instead of writing.
 
 ## Augmentation pipeline (issue #7)
 
@@ -128,16 +163,30 @@ into, `eval` is forced `false`, and provenance is preserved.
 The label-transform maths (corners through a known warp) are unit-tested in
 [`../src/augment/augment.test.ts`](../src/augment/augment.test.ts), which runs in CI.
 
-#### Recorded baseline — v1 decoder over the current fixtures
+## Recorded baseline — v1 decoder over the committed fixtures (issues #5, #8)
+
+The harness prints two precision-first tables and runs the gate on the **held-out
+eval gold** (`eval: true`), never on the training seed (grading on data the model
+trains on would flatter the result).
+
+**Eval gold** — held out, weighted to hard, the gate's truth set:
 
 | stratum | n | correct | abstain | wrong | wrong % |
 | --- | --- | --- | --- | --- | --- |
-| easy | 1 | 1 | 0 | 0 | 0.0% |
 | hard | 2 | 0 | 1 | 1 | 50.0% |
+| **overall** | **2** | **0** | **1** | **1** | **50.0%** |
+
+**All labelled** — eval gold + training seed, for context:
+
+| stratum | n | correct | abstain | wrong | wrong % |
+| --- | --- | --- | --- | --- | --- |
+| easy (seed) | 1 | 1 | 0 | 0 | 0.0% |
+| hard (eval) | 2 | 0 | 1 | 1 | 50.0% |
 | **overall** | **3** | **1** | **1** | **1** | **33.3%** |
 
-Gate: **ADVISORY** (3 < 200 min samples). The lone confidently-wrong read is the
-faint-segment fixture (`19:45:08` mis-read as `19:45:09`, conf 0.71) — the exact
-cardinal-sin case the learned reader (#10) must fix; the small-seconds fixture
-abstains honestly, and the clean fixture reads correctly. This baseline is what the
-rectification stage (#4) and the learned reader (#10) are measured against.
+Gate: **ADVISORY** (2 eval < 200 min samples — a 0.5% ceiling is unobservable that
+small). The lone confidently-wrong read is the faint-segment eval fixture
+(`19:45:08` mis-read as `19:45:09`, conf 0.71) — the exact cardinal-sin case the
+learned reader (#10) must fix; the small-seconds eval fixture abstains honestly, and
+the clean seed fixture reads correctly. This is what the learned reader (#10) is
+measured against.
