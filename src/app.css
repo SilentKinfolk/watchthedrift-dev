@@ -49,6 +49,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Honest ± uncertainty band, shown quietly under the big answer. Tabular figures
+   so the decimal sits steady; grey so it reads as a qualifier, not the answer. */
+.band {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
+
 .sub {
   margin: 0 0 16px;
   font-size: 1.15rem;

@@ -7,6 +7,7 @@ import { preprocess } from '../recognize/preprocess'
 import { TIME_CROP, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
 import { computeDrift, type DriftResult } from '../drift/Drift'
 import { isDebug, renderDebug } from './DebugView'
+import { applyResult } from './format'
 
 type State = 'idle' | 'starting' | 'preview' | 'scanning' | 'result' | 'error'
 
@@ -57,6 +58,7 @@ export class Screen {
   private clockBox!: HTMLElement
   private clockTime!: HTMLElement
   private answer!: HTMLElement
+  private band!: HTMLElement
   private sub!: HTMLElement
   private cond!: HTMLElement
   private controls!: HTMLElement
@@ -87,6 +89,7 @@ export class Screen {
         <div class="guide"></div>
       </div>
       <div class="answer" hidden></div>
+      <div class="band" hidden></div>
       <p class="sub"></p>
       <p class="cond"></p>
       <div class="controls"></div>
@@ -98,6 +101,7 @@ export class Screen {
     this.clockBox = this.q('.clock')
     this.clockTime = this.q('.clock-time')
     this.answer = this.q('.answer')
+    this.band = this.q('.band')
     this.sub = this.q('.sub')
     this.cond = this.q('.cond')
     this.controls = this.q('.controls')
@@ -130,6 +134,7 @@ export class Screen {
     // camera is spinning up or on an error screen.
     this.clockBox.hidden = state === 'starting' || state === 'error'
     this.answer.hidden = state !== 'result'
+    this.band.hidden = state !== 'result'
     this.controls.innerHTML = ''
 
     switch (state) {
@@ -150,9 +155,10 @@ export class Screen {
         this.controls.append(this.btn('Stop', () => this.setState('preview')))
         break
       case 'result': {
-        const d = this.lastDrift!
-        this.answer.textContent = formatBig(d)
-        this.setSub(formatSub(d))
+        // Render the reading with its honest ± band (applyResult hides the band
+        // only when the sync degraded to an unbounded one). Answer + sub + band
+        // are written together so they never fall out of step.
+        applyResult({ answer: this.answer, band: this.band, sub: this.sub }, this.lastDrift!)
         this.controls.append(this.btn('Scan again', () => void this.startScan()))
         break
       }
@@ -428,20 +434,6 @@ function formatClock(d: Date, is24h: boolean): string {
   if (is24h) return `${String(d.getHours()).padStart(2, '0')}:${mm}:${ss}`
   const h = d.getHours() % 12 || 12
   return `${h}:${mm}:${ss} ${d.getHours() < 12 ? 'am' : 'pm'}`
-}
-
-function formatBig(d: DriftResult): string {
-  const n = Math.round(d.offsetSec)
-  if (n === 0) return '0 s'
-  return `${n > 0 ? '+' : '−'}${Math.abs(n)} s`
-}
-
-function formatSub(d: DriftResult): string {
-  const n = Math.round(d.offsetSec)
-  if (n === 0) return 'Spot on — no drift to the nearest second.'
-  const unit = Math.abs(n) === 1 ? 'second' : 'seconds'
-  const word = d.direction === 'fast' ? 'fast' : 'slow'
-  return `Your watch is ${Math.abs(n)} ${unit} ${word}.`
 }
 
 function cameraErrorMessage(e: CameraError): string {
