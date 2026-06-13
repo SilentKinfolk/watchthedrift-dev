@@ -4,8 +4,9 @@
 > north star; this PLAN closes its open decisions (#1–#6) and the track questions
 > into a committed design **with the rationale**, so future agents don't
 > re-derive it. Where the two conflict, **PLAN wins** — SPEC's "Open decisions"
-> section is now resolved here. Sharpened via `/grill-me` on 2026-06-13; next
-> steps `/to-prd` → `/to-issues` → `/loop`.
+> section is now resolved here. Sharpened via `/grill-me` (2026-06-13) then a
+> **scope cut on 2026-06-14** — v2 ships the geometry win (corners + the v1
+> decoder); learned *reading* is deferred to v2.1. Published via `/to-prd`.
 
 ## Thesis
 
@@ -20,6 +21,19 @@ v1 hit was *robustness*, not breadth; breadth adds a disambiguation sub-project
 multiplies the eval/data burden before the core is proven. The architecture
 below happens to generalize (a digit *detector/reader*, not an F-91W *template*),
 so breadth stays a later data problem, not a rewrite — but it is not a v2 goal.
+
+**Scope cut within v2 — depth, deferred (2026-06-14):** the *genuinely hard*
+reading stratum — faint/aged segments, strong glare, near-threshold low light, and
+the small offset seconds digit — is **deferred to a dedicated v2.1 issue**. It is
+the *only* part that needs a real **hard** eval set, and the open web cannot supply
+one (people photograph watches to show them *clearly*), synthetic can never stand
+in for it (you cannot certify "works on real hard watches" with anything but real
+hard watches), and there is no F-91W on hand to shoot. **v2 therefore ships the
+geometry win only:** find the LCD anywhere in frame → straighten it → read it with
+the **existing v1 decoder**, and **abstain honestly** on anything that isn't a
+good, legible view. That is the wall v1 actually hit (angle / off-centre / framing
+→ all-black). The faint/glare/small-seconds ambition — and the learned *reader* +
+cross-check that exist to win it — wait for real hard data.
 
 ## Invariants
 
@@ -49,6 +63,13 @@ phone frame
                                (heuristic abstains on faint / small-seconds — where the model earns its keep)
   → decode-to-verify (valid HH:MM:SS only) → drift vs network time → nearest-second ± band
 ```
+
+**v2 scope (2026-06-14):** the `[ learned reader ‖ … ]` bracket and the
+`arbitration` block are **deferred to v2.1**. v2 ships the top of the pipeline only
+— `learned corner detector → homography → frontal crop → `**`v1 decoder`** —
+abstaining on anything that isn't a legible view. (Tesseract is still dropped in
+v2.) The full pipeline above stays the v2.1 design; the *why* below is its eventual
+rationale.
 
 **Why this shape.** Reading v1's decoder settled decision #1. Its reading logic
 is structurally *perspective-naive*: it splits digit cells by vertical column
@@ -182,13 +203,23 @@ retake*, and *confident-but-wrong*. The last is the cardinal sin (a silently
 wrong drift number), so the gate **leads with a confident-wrong ceiling**, not a
 headline accuracy:
 
-- **Primary gate:** confident-wrong ≤ **~0.5%** (target near-zero) across **all**
-  strata including hard, measured on the **post-agreement locked answer**.
-- **Secondary (stratified read-success):** ≈ **≥95% easy / ≥80% moderate /
-  best-effort hard**, the rest falling honestly to retake.
-- **Calibration is mandatory:** the reader's confidence must be calibrated (e.g.
-  temperature scaling on a held-out set) so the abstain threshold means
-  something. v1's confidence is a Hamming-distance proxy — not good enough.
+- **Primary gate (v2):** confident-wrong ≤ **~0.5%**, **enforced on the pooled
+  easy + moderate real eval set** — abundant online, so the gate genuinely *bites*.
+  Measured on v2's locked answer (the v1 decoder's calibrated read; no cross-check
+  in v2).
+- **Hard stratum: report, don't gate.** A ≤ 0.5% claim on *hard* needs ~600 hard
+  reals (rule of three) we will never have, and synthetic can never substitute. So
+  v2 reports zero-confident-wrong + an honest Wilson upper bound on whatever small
+  hard set exists, and **never claims tighter than the data allows**. The hard
+  stratum is a v2.1 goal.
+- **Synthetic is banned from eval.** Augmented / rendered / generated images are
+  training-only (+ an optional fenced *canary* regression tier). The acceptance
+  gate is **real-only**, or the precision number is a lie.
+- **Secondary (stratified read-success):** ≈ **≥ 95% easy / ≥ 80% moderate**; hard
+  is best-effort / deferred. The rest fall honestly to retake.
+- **Calibration is mandatory:** v2 calibrates the **v1 decoder's** confidence (its
+  Hamming-distance proxy isn't good enough) so the abstain threshold means
+  something; the learned reader's calibration is a v2.1 concern.
 
 ## Precision & trust (Track 4)
 
@@ -217,10 +248,11 @@ keep timestamping at frame-grab.
   **try hardest, abstain honestly when too dark** ("too dark — find more light").
   Adequate ambient light is an accepted precondition.
   - **Scope consequence (deliberate, not silent):** *true low light is handled by
-    honest failure, not by adding photons.* Augmented low-light data lets the
-    model cope with *moderate* dimness; below threshold → retake. This is what
-    keeps the model small — it was never required to be a low-light hero. Glare,
-    angle, off-centre, faint-in-adequate-light and small-seconds remain in scope.
+    honest failure, not by adding photons.* For **v2**, **angle / off-centre /
+    framing** (the geometry the corner detector fixes) are in scope; **glare,
+    faint/aged segments, moderate dimness, and the small-seconds digit are deferred
+    to v2.1** — they need the learned reader + a real hard eval set, so v2 abstains
+    on them honestly. This is what keeps v2 small and shippable now.
 - **Offline.** Reading works offline (model cached); the **time check requires
   network**, so offline we say **"connect to measure"** — and **never** fall back
   to the device clock (circular: the phone clock is exactly the thing that might
@@ -327,6 +359,12 @@ Each slice is a thin vertical, independently shippable to the preview site, and
 order. Slices 1–3 are the spine already in `main`; the rest are all agent-doable
 (human spot-checks noted, never blocking).
 
+**v2 = slices 4, 5, 6, 9, 10** — the corner detector feeding the **existing v1
+decoder** (that pairing *is* v2's read path), plus UX/offline and trust polish.
+**Slices 7–8 (learned reader + cross-check arbitration) are DEFERRED to the v2.1
+issue** with the hard stratum. **Tesseract (`tesseract.js`) is dropped as v2
+cleanup** (dead weight), independent of the deferred arbitration.
+
 1. **Baseline port** — ✅ done. v1 app + Node eval harness, working preview deploy.
 2. **Rectification wiring** — ✅ done. `corners → homography → frontal crop → v1
    decoder` behind `Recognizer`, fed by a stub `CornerSource` (`?corners=`); the
@@ -346,27 +384,27 @@ order. Slices 1–3 are the spine already in `main`; the rest are all agent-doab
    trainer → int8 blob; drop weights into slice-4's `CornerSource`; corner-error
    metric in isolation on the eval gold. [agent; needs 4 + 5] *(the honest split of
    old #9: integration in 4, model here.)*
-7. **Learned reader — train · export · integrate · calibrate** — per-digit
-   classifier on the rectified crop, same kernel; temperature-scaling calibration;
-   behind `Recognizer`. [agent; needs 4 + 5 + 6] *(old #10.)*
-8. **Cross-check arbitration + drop Tesseract** — agree / clash / lone-reader
-   logic, calibrated abstain threshold, remove `tesseract.js`. [agent; needs 7]
-   *(old #11.)*
+7. **(DEFERRED → v2.1) Learned reader — train · export · integrate · calibrate** —
+   per-digit classifier on the rectified crop, same kernel; temperature-scaling
+   calibration; behind `Recognizer`. [agent, once real hard data exists] *(old #10.)*
+8. **(DEFERRED → v2.1) Cross-check arbitration** — agree / clash / lone-reader
+   logic, calibrated abstain threshold. [needs 7] *(old #11; Tesseract removal moves
+   into v2 cleanup — see above.)*
 9. **Capture UX + offline** — drop the alignment box, live feedback, too-dark
    abstain; service-worker model caching, require-network-to-measure. [agent;
-   needs 7] *(old #12 / #13.)*
+   needs 6] *(old #12 / #13.)*
 10. **Trust polish** — better-than-1 s time source, sync resilience, visible ±
     band. [agent] *(old slice 6.)*
 
 ## Top risks (carry into the PRD)
 
-1. **Hard-case eval data is make-or-break** — without enough credible *real*
-   hard-stratum photos, the precision-first gate stays advisory. Relaxing
-   collection to any-source (Rights) widens the pool — including a larger
-   local-only eval set — but the open web still skews easy, so genuinely-hard reals
-   stay scarce; augmentation fills *training* only, never eval, and the committed
-   CI-reproducible eval slice is further bounded to CC/PD. Mitigated by honest
-   advisory-gating, not by manufacturing data. Highest risk.
+1. **Hard-case eval data (now a v2.1 risk, not a v2 blocker)** — the scope cut
+   moved the make-or-break hard-data dependency into v2.1. **v2's** eval needs only
+   **easy + moderate** reals, abundant online → the v2 gate genuinely enforces. The
+   hard stratum (v2.1) still has no real eval source — the web skews easy, there's
+   no F-91W to shoot, and synthetic is banned from eval — so it is the standing
+   blocker on v2.1, unblocked cheapest by a ~£10 unit. Augmentation fills *training*
+   only, never eval.
 2. **Annotation precision** — agent-estimated corners are lower-precision than
    human clicks, and corners are the bottleneck (#3). Guard: human spot-check on a
    sample + the in-isolation corner-error metric.
@@ -384,23 +422,28 @@ order. Slices 1–3 are the spine already in `main`; the rest are all agent-doab
 7. **Calibration** — precision-first lives or dies on calibrated confidence + a
    sound abstain threshold; needs a real calibration split and ongoing validation.
 
-## Open ML decisions to grill
+## Grill outcomes (2026-06-14)
 
-The forks `/grill-me` should resolve before `/to-prd` → `/to-issues`:
+`/grill-me` resolved the open forks; the headline was the **scope cut** above
+(hard reading → v2.1). Per-fork:
 
-1. **Corner output:** direct 8-coord regression vs heatmap + argmax (accuracy vs
-   size / speed — feeds bottleneck risk #3).
-2. **Reader head:** per-digit-cell classifier vs whole-row sequence model.
-3. **Training toolchain:** commit to **pure-numpy** as the floor, or spike
-   torch-CPU / an operator GPU first? (network reachability + CPU speed decide.)
-4. **Corpus sufficiency:** how many real hard eval images make the gate *enforce*
-   rather than stay advisory — and the fallback if the web yields fewer?
-5. **Annotation:** is agent-eyeballed-corners + spot-check accurate enough for the
-   bottleneck stage, or is human clicking required for the eval gold?
-6. **Quantisation:** per-tensor vs per-channel int8; what calibration set fixes the
-   activation ranges?
-7. **Weights format:** bespoke binary + manifest vs a *minimal ONNX subset* read by
-   our own micro-reader (trainer interop vs simplicity).
-8. **Data-rights policy:** ratify "train-local on any source, redistribute CC/PD
-   only" (and your jurisdiction's stance) — or tighten to CC-only if you'd rather
-   be conservative than maximise the hard-data pool.
+1. **Corner output:** start with **direct 8-coord regression** (tiniest; feeds
+   `rectify` directly); revisit heatmaps only if corner-error misses the bar.
+2. **Reader head:** **deferred to v2.1** (no learned reader in v2).
+3. **Training toolchain:** **pure-numpy floor** — one tiny corner net; torch-CPU
+   only if a speed spike demands it.
+4. **Corpus sufficiency / gate:** v2 gate **enforces on easy + moderate** (real,
+   abundant); hard **reports an honest bound**, deferred to v2.1.
+5. **Annotation:** **agent-eyeballed corners + human spot-check** (the bottleneck)
+   — acceptable for v2; revisit if isolation corner-error disappoints.
+6. **Quantisation:** **per-tensor int8** to start; per-channel only if accuracy
+   needs it. (Build-time detail.)
+7. **Weights format:** **bespoke binary + JSON manifest + reference vector** (no
+   interop need). (Build-time detail.)
+8. **Data-rights:** **ratified** — train-local on any source, redistribute CC/PD
+   only (see Rights).
+
+**Data-driven triggers (decide from the harness, not now):** if the v1 decoder's
+small-seconds read-success on the rectified crop is shaky on *good* views, or if
+v1-alone (no cross-check) breaches the confident-wrong ceiling on easy/moderate,
+that's the signal to pull the learned reader (v2.1) forward.
