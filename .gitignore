@@ -1,6 +1,10 @@
-# Node
+# Node / Vite build
 node_modules/
 dist/
+dist-ssr/
+.vite/
+*.local
+*.log
 
 # Build-loop runner state (scripts/issue-loop.sh)
 .loop-logs/
@@ -9,6 +13,21 @@ dist/
 
 # Local-only Claude Code settings
 .claude/settings.local.json
+
+# Harness scratch + outputs (developer-only, not shipped)
+tools/local/
+tools/out/
+
+# Fixture images: CC-licensed test photos are NOT redistributed from this repo —
+# re-fetch them from the Commons URLs in tools/fixtures/CREDITS.md (the repo stays
+# scrupulously CC-only / image-free; only code and trained weights are committed).
+tools/fixtures/*.jpg
+tools/fixtures/*.jpeg
+tools/fixtures/*.png
+tools/fixtures/*.webp
+
+# A stray root-level traineddata copy (the shipped one lives in public/traineddata/)
+/digits.traineddata
 
 # OS
 .DS_Store

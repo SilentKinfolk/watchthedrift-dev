@@ -1,0 +1,25 @@
+{
+  "name": "watchthedrift-dev",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "v2 experimentation/preview build of watchthedrift: point your camera at a Casio F-91W and see how many seconds it has drifted from real (NTP) time — right now.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "harness": "node --experimental-strip-types tools/ocr-harness.ts"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "tesseract.js": "^7.0.0"
+  }
+}
