@@ -69,12 +69,14 @@ Decisions inside #1:
   crop for the honesty/overlay story, and makes per-digit calibration tractable.
   End-to-end is the worst fit on-device for one known watch (biggest/slowest,
   hardest to calibrate, needs full-scene labels).
-- **Learned corners for the rectification, not classical quad detection.** We're
-  already shipping a model runtime, so "classical needs no model" is moot; and
-  classical contour/quad detection leans on crisp edges that the reflective F-91W
-  bezel *loses* in the low-light/glare conditions v2 exists to fix. A small
-  keypoint net is robust there, and synthetic-free corner labels come from the
-  same photos (below).
+- **Learned corners for the rectification, not classical quad detection.**
+  Classical contour/quad detection leans on crisp bezel edges that the reflective
+  F-91W *loses* under the low-light/glare conditions v2 exists to fix; a small
+  keypoint net is robust there. (The original "we already ship a model runtime, so
+  classical-needs-no-model is moot" argument is now **retired** — the runtime is a
+  bespoke kernel we write either way, see decision #2 — but the
+  robustness-in-glare argument carries the decision on its own.) Synthetic-free
+  corner labels come from the same photos (below).
 - **Cross-check, not replace (decision #6).** Rectification removes the v1
   decoder's *only* weakness (perspective), so on the rectified crop it is a
   near-free *independent second opinion* — the cheapest route to the precision
@@ -85,16 +87,31 @@ Decisions inside #1:
 
 ## On-device budget (decision #2)
 
-**Tight: ≤ ~5 MB total first-load** (both models ≤ ~1.5 MB int8-quantized + a
-lean wasm-SIMD runtime), **≥ 5 FPS** on a ~3–4-year-old mid-range Android,
-WebGPU as optional progressive enhancement, enforced by a **CI byte-gate**.
+**Tight: ≤ ~5 MB total first-load** (both models ≤ ~1.5 MB int8-quantized + the
+inference runtime), **≥ 5 FPS** on a ~3–4-year-old mid-range Android, enforced by
+a **CI byte-gate** (`scripts/check-bundle-size.mjs`; `BUDGET_BYTES = 5 MiB`,
+measured on raw file size).
 
-Two reframes from reading v1 justify "tight": **latency isn't binding** — v1
-already does live scan with *lock-on-agreement*, which hides per-frame cost, and
-two tiny CNNs run in tens of ms on wasm-SIMD; and the **byte sink is the runtime,
-not the weights** — a corner regressor + a crop reader are ~1–1.5 MB combined,
-while the ML runtime is the multi-MB download (v1 already tolerates ~1.4 MB of
-Tesseract data). Two models share one runtime, so the second is nearly free.
+**The runtime is a bespoke tiny-CNN kernel in TypeScript, not a general ML
+runtime — decided by measurement, not assumption.** The original plan assumed
+"the byte sink is the runtime" but that a *lean* wasm-SIMD runtime would fit the
+~3.5 MB left after weights. Measured (2026-06-13), that is false: onnxruntime-web
+1.26.0's leanest SIMD baseline `ort-wasm-simd-threaded.wasm` is **13,022,405 B
+(~12.4 MB)** — **~2.5× the entire 5 MB gate**, before a single byte of weights
+(the WebGPU/jsep build is ~25 MB; even brotli'd the runtime alone is ~4 MB). Stock
+onnxruntime-web / TF.js cannot ship under this budget; the only shrink path is a
+custom emscripten ORT build, its own C++ toolchain sub-project. So we **drop the
+general runtime** and hand-write a minimal inference kernel (conv / relu / pool /
+dense) for our two *known, tiny* nets — a few KB of code + int8 weights, i.e.
+**well under 0.5 MB total**, vs 12.4 MB. This **does not touch decision #1's
+"learned-over-classical"**: it runs the *same learned weights*, only the runtime
+changes. Kernel + weights-blob spec in **ML engineering**, below.
+
+**Latency still isn't binding:** v1 already does live scan with
+*lock-on-agreement*, which hides per-frame cost, and two tiny CNNs run in tens of
+ms; the residual risk moves from *bytes* to whether a pure-TS conv kernel holds
+≥ 5 FPS (carried in Top risks). WebGPU is dropped as an enhancement — its runtime
+is *bigger*, not smaller.
 
 ## Training data (decision #5)
 
@@ -114,10 +131,31 @@ real photos gives true LCD photoreality for free.)
   (held out, never augmented) = real photos only, weighted to the genuinely hard
   ones.** Grading on your own augmentations flatters the model; the hunted hard
   reals are most valuable as the **eval gold set**.
-- **Labelling & rights.** Filename convention for time (`*_HH-MM-SS_24h.jpg`, per
-  the v1 harness) + a small **4-point corner-annotation sidecar tool** for real
-  photos. Collected images stay **gitignored / un-redistributed** (repo is
-  scrupulously CC-only); **only trained weights ship**.
+- **Collection is agent-doable (decision, per build-out 2026-06-13).** A
+  **license-aware harvester** queries open CC/PD sources (Wikimedia Commons +
+  Openverse APIs; Flickr-CC) for "Casio F-91W", keeps only CC-BY / CC-BY-SA /
+  CC0 / PD, records `url` / `license` / `credit`, and downloads into gitignored
+  `tools/local/` (the harness already scans it) with the filename time convention.
+  The agent stratifies each real photo (easy / moderate / hard) by eye. *Residual
+  reality, not an agent limitation:* the open web skews easy, so genuinely-hard
+  reals stay scarce — augmentation fills the **training** hard strata, but
+  **eval-gold hard reals cannot be manufactured** (top-risk #1).
+- **Annotation is agent-assisted + human spot-check.** The 4-corner sidecar is
+  written by a vision-capable agent eyeballing the LCD corners (via the existing
+  `buildCornerLabel`), with a **human spot-check on a sample** — corners are the
+  pipeline bottleneck (top-risk #3), so agent-estimated corners are validated, not
+  trusted blind. Augmented variants need no annotation: corners follow the warp
+  for free (already built, `warpCorners`).
+- **Corpus targets (sharpen in grill).** Training = collected-clean + augmented
+  across all strata (augmentation multiplies a handful of clean reals into
+  hundreds of hard training variants). Eval gold = real-only, held out, weighted
+  hard — target enough hard reals to lift the precision gate out of *advisory*
+  (`metrics.ts` enforces only at ≥ 200 pooled samples; the hard *stratum* needs
+  its own sufficiency call). If the web yields too few, the gate stays advisory and
+  **we say so** rather than fabricate confidence.
+- **Rights.** Filename time convention (`*_HH-MM-SS_24h.jpg`, per the v1 harness).
+  Collected images stay **gitignored / un-redistributed** (repo is scrupulously
+  CC-only); **only trained weights ship**.
 
 ## Success metric (acceptance gate)
 
@@ -179,40 +217,167 @@ offline reading, the **CI byte-gate** guards ≤ 5 MB, and this dev repo's previ
 Pages deploy is the experimentation ground. Same-origin over a separate CDN:
 offline-friendly, no third-party dependency, versioning stays atomic.
 
+## ML engineering — the buildable ML work
+
+The sections above decide the *architecture*; this one is the **engineering work
+breakdown** so the ML is buildable, sliceable, and — per the operator's direction
+— **agent-doable end-to-end** (data collection + training included), with human
+spot-checks only where quality is safety-critical. It exists because the original
+plan black-boxed "train + integrate," which is why issue #9 fused an agent-doable
+half with a human-only half and stalled.
+
+### The runtime: a bespoke tiny-CNN kernel (TS)
+
+A hand-written, pure-TypeScript inference kernel — the same module the browser app
+and the Node harness import. Op set is deliberately minimal: **conv2d, ReLU,
+max/avg-pool, dense (matmul + bias), softmax**; int8 weights, float accumulate.
+Both models share the one kernel. Pure functions over typed arrays, so it
+unit-tests deterministically and carries no dependency. Perf plan: pure TS first
+(tens of ms at this size; lock-on-agreement hides per-frame cost), a WASM-SIMD
+port held in reserve **only if** a measured FPS shortfall demands it — not before.
+
+### The weights-blob contract — the seam that decouples train from integrate
+
+One versioned asset per model: a binary weight blob + a small JSON manifest
+(architecture id, ordered layer shapes, int8 scale / zero-point per tensor-or-
+channel, input normalisation). **The TS kernel reads exactly this; the trainer
+writes exactly this.** Consequences:
+
+- The runtime + integration can be built and **unit-tested against a *dummy*
+  blob** (random or analytic weights) **before any model is trained** — this is
+  what makes the integration half agent-doable now, and unblocks it permanently.
+- Real weights drop in with **no code change**; the model is a **same-origin build
+  asset**, cache-busted by build hash (atomic app+model versioning, per Infra) and
+  declared in the byte-gate's `EAGER_RUNTIME_ASSETS`.
+- A **reference test vector** (one input → expected output) is exported at train
+  time and asserted by the TS kernel, so trainer and runtime forward passes are
+  *proven* to agree (guards the hand-rolled-math parity risk).
+
+### Model specs (concrete starting points; open forks in "decisions to grill")
+
+- **Corner detector** — input: whole (downscaled) frame, grayscale, fixed small
+  square (≈128×128 — the alignment box is being dropped, so it must find the LCD
+  anywhere in frame). ~4 conv blocks (8→16→32→64 ch, 3×3, stride-2 / pool) →
+  global avg-pool → dense → **8 outputs = 4 corners (x,y) in normalised frame
+  coords, TL/TR/BR/BL** (drops straight into `rectify`'s `Quad`). Tens-of-K params
+  → ~30–150 KB int8. Loss: smooth-L1 on normalised coords. *Regression vs heatmaps
+  is a grill fork* (heatmaps are more accurate but bigger / slower).
+- **Reader** — operates on the **rectified frontal crop** (fixed canonical size),
+  whose digit-cell layout is therefore known. A **per-digit-cell classifier**
+  (small grayscale patch → 11-way: 0–9 + blank) keeps it tiny and makes per-digit
+  calibration tractable (PLAN's reason for rectify→read over end-to-end). The small
+  seconds digit is just another known cell on the canonical crop. *Per-cell vs
+  whole-row-sequence is a grill fork.*
+- **Calibration (mandatory).** Temperature-scale each model's confidence on a
+  held-out calibration split; the abstain threshold is then chosen to hold the
+  confident-wrong ceiling. Replaces v1's Hamming-distance proxy. The corner-error
+  metric (mean per-corner displacement normalised by LCD diagonal) gates the corner
+  stage **in isolation** (top-risk #3).
+
+### Training is agent-doable — numpy-first, no heavy toolchain
+
+The make-or-break constraint is that this AppVM has **no torch / tf / ONNX and no
+GPU** (numpy + PIL only). Rather than treat that as a block, the plan **chooses an
+architecture that needs none of it**:
+
+- **Primary: a pure-numpy tiny-CNN trainer.** Forward + hand-written backprop for
+  exactly the kernel's op set (the same conv / relu / pool / dense), seeded and
+  deterministic, run as a **background task**. The nets and corpus are tiny by
+  design, so CPU training is feasible; numpy is already present, so this route has
+  **zero external dependency and needs no network**. It also pins train/infer
+  parity — the numpy ops mirror the TS ops one-to-one.
+- **Optional accelerator: torch-CPU** (or an operator-supplied GPU) behind the
+  **same export contract**, adopted only if a connectivity / speed spike shows
+  it's needed and `pip install` is reachable. Numpy-only is the guaranteed floor.
+- **Pipeline (all agent steps):** load corpus + sidecars → augment (reuse
+  `augment.ts` ops) → train / val / calibration split → train → quantise to int8 →
+  export blob + manifest + reference vector → run the TS-runtime eval harness
+  (corner-error / precision gate) → **commit only the weights** (images stay
+  gitignored). Reproducible: seed + dataset manifest + train config committed
+  alongside the weights' build hash.
+
+### What still wants a human (spot-check, not blocker)
+
+Sampling agent-annotated corners (bottleneck risk), sanity-checking license calls,
+eyeballing augmentation realism, and providing a GPU **iff** numpy-CPU training
+proves too slow. None of these gate the agent from making progress; they are
+quality checks layered on agent-produced artifacts.
+
 ## Build order (tracer-bullet slices for `/to-issues`)
 
-Each slice is a thin vertical through capture → read → result, independently
-shippable to the preview site. The ordering front-loads robustness and de-risks
-the pipeline *before* any model is trained.
+Each slice is a thin vertical, independently shippable to the preview site, and
+**re-sequenced (2026-06-13)** so the agent-doable ML work lands in dependency
+order. Slices 1–3 are the spine already in `main`; the rest are all agent-doable
+(human spot-checks noted, never blocking).
 
-1. **Baseline port** — stand up the v1 app in this repo (camera, v1 heuristic
-   decoder, time-sync, drift, B&W UI) + the Node eval harness → a working preview
-   deploy. Establishes the end-to-end spine here.
-2. **Rectification stage** — corner detector + homography feeding the **existing
-   v1 decoder** on the rectified crop. First model; first byte-gate. This alone
-   should lift angle / off-centre / all-black — measurable on the harness, with
-   no learned reader yet (a waypoint toward the learned-reader end state, not the
-   end state).
-3. **Data + eval** — collection tooling, corner-annotation sidecar, augmentation
-   pipeline, stratified real eval set (easy/moderate/hard), precision-first metric
-   wired into CI.
-4. **Learned reader** — train + integrate on the rectified crop, wire the
-   cross-check arbitration (agree / clash / lone), calibrate confidence. The
-   reader now earns faint / small-seconds.
-5. **Capture UX + offline** — drop the alignment box, live feedback, too-dark
-   abstain, require-network offline behaviour, service-worker model caching.
-6. **Trust polish** — sub-second time source, sync resilience, visible ± band.
+1. **Baseline port** — ✅ done. v1 app + Node eval harness, working preview deploy.
+2. **Rectification wiring** — ✅ done. `corners → homography → frontal crop → v1
+   decoder` behind `Recognizer`, fed by a stub `CornerSource` (`?corners=`); the
+   learned detector drops in at that one seam.
+3. **Eval + data tooling** — ✅ done. Corner-label sidecar schema, annotation
+   tool, augmentation pipeline, precision-first metric + byte-gate in CI.
+4. **Inference runtime kernel + weights contract** — bespoke TS conv-net kernel,
+   weights-blob loader, a real `CornerSource` that runs it, byte-gate registers the
+   model+runtime asset. Unit-tested against a **dummy blob** → **proves the ≤ 5 MB
+   budget with no trained model**. [agent; needs no data] *(the prototype already
+   greenlit.)*
+5. **Data collection — CC/PD harvester + corpus** — license-aware harvester,
+   provenance sidecars, agent-assisted corner annotation + human spot-check,
+   stratified real eval-gold. [agent + spot-check] *(parallel with 4.)*
+6. **Corner detector — train · export · integrate · isolation-eval** — numpy
+   trainer → int8 blob; drop weights into slice-4's `CornerSource`; corner-error
+   metric in isolation on the eval gold. [agent; needs 4 + 5] *(the honest split of
+   old #9: integration in 4, model here.)*
+7. **Learned reader — train · export · integrate · calibrate** — per-digit
+   classifier on the rectified crop, same kernel; temperature-scaling calibration;
+   behind `Recognizer`. [agent; needs 4 + 5 + 6] *(old #10.)*
+8. **Cross-check arbitration + drop Tesseract** — agree / clash / lone-reader
+   logic, calibrated abstain threshold, remove `tesseract.js`. [agent; needs 7]
+   *(old #11.)*
+9. **Capture UX + offline** — drop the alignment box, live feedback, too-dark
+   abstain; service-worker model caching, require-network-to-measure. [agent;
+   needs 7] *(old #12 / #13.)*
+10. **Trust polish** — better-than-1 s time source, sync resilience, visible ±
+    band. [agent] *(old slice 6.)*
 
 ## Top risks (carry into the PRD)
 
-1. **Hard-case data is make-or-break** — without a credible *real* hard eval set,
-   the precision-first gate can't be trusted. Highest risk.
-2. **Augmentation realism** — distorted clean photos may not match real
-   low-light/glare physics; eval-on-real-only is the guard against self-deception.
+1. **Hard-case eval data is make-or-break** — without credible *real* hard-stratum
+   photos, the precision-first gate stays advisory. The agent harvester (slice 5)
+   collects what the open web has, but it skews easy; the residual scarcity is a
+   data-world fact, mitigated by honest advisory-gating, not by augmentation (which
+   is training-only). Highest risk.
+2. **Annotation precision** — agent-estimated corners are lower-precision than
+   human clicks, and corners are the bottleneck (#3). Guard: human spot-check on a
+   sample + the in-isolation corner-error metric.
 3. **Corner stage is the bottleneck** — wrong corners → wrong homography → garbage
    to the reader; eval the rectification stage *in isolation*, especially in glare.
-4. **Calibration** — precision-first lives or dies on calibrated confidence + a
-   sound abstain threshold; needs a real calibration set and ongoing validation.
-5. **Budget vs accuracy** — with the budget fixed and low-light descoped, the only
-   levers left if accuracy falls short are more/better data and capture
-   preconditions.
+4. **Hand-rolled inference parity & perf** — the TS kernel must match the numpy
+   trainer's forward pass (guard: exported reference vector asserted in TS) and
+   hold ≥ 5 FPS in pure TS (fallback: WASM-SIMD port). This is the cost of dropping
+   a general runtime to make the byte budget — a *tested* trade (ort-web is ~2.5×
+   over the gate), not an assumed one.
+5. **Tiny-corpus overfit** — few reals risks a model that memorises; augment for
+   training, eval on real-only, watch the train/val gap.
+6. **Augmentation realism** — distorted clean photos may not match real
+   low-light/glare physics; eval-on-real-only is the guard against self-deception.
+7. **Calibration** — precision-first lives or dies on calibrated confidence + a
+   sound abstain threshold; needs a real calibration split and ongoing validation.
+
+## Open ML decisions to grill
+
+The forks `/grill-me` should resolve before `/to-prd` → `/to-issues`:
+
+1. **Corner output:** direct 8-coord regression vs heatmap + argmax (accuracy vs
+   size / speed — feeds bottleneck risk #3).
+2. **Reader head:** per-digit-cell classifier vs whole-row sequence model.
+3. **Training toolchain:** commit to **pure-numpy** as the floor, or spike
+   torch-CPU / an operator GPU first? (network reachability + CPU speed decide.)
+4. **Corpus sufficiency:** how many real hard eval images make the gate *enforce*
+   rather than stay advisory — and the fallback if the web yields fewer?
+5. **Annotation:** is agent-eyeballed-corners + spot-check accurate enough for the
+   bottleneck stage, or is human clicking required for the eval gold?
+6. **Quantisation:** per-tensor vs per-channel int8; what calibration set fixes the
+   activation ranges?
+7. **Weights format:** bespoke binary + manifest vs a *minimal ONNX subset* read by
+   our own micro-reader (trainer interop vs simplicity).
