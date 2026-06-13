@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "size": "node scripts/check-bundle-size.mjs",
     "harness": "node --experimental-strip-types tools/ocr-harness.ts"
   },
   "devDependencies": {

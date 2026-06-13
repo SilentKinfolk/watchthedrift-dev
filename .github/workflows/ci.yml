@@ -24,3 +24,4 @@ jobs:
       - run: npm ci
       - run: npm run build # tsc typecheck + vite production build (same as deploy)
       - run: npm test # Vitest (drift, time-sync, parser)
+      - run: npm run size # first-load byte-budget gate (≤ ~5 MB) — scripts/check-bundle-size.mjs
