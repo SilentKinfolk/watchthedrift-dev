@@ -17,7 +17,8 @@
     "augment": "node --experimental-strip-types tools/augment.ts",
     "annotate": "node --experimental-strip-types tools/annotate.ts",
     "gen:dummy": "node --experimental-strip-types tools/gen-dummy-model.ts",
-    "gen:parity": "node --experimental-strip-types tools/train/gen_parity_fixture.ts"
+    "gen:parity": "node --experimental-strip-types tools/train/gen_parity_fixture.ts",
+    "prep:corners": "node --experimental-strip-types tools/train/prep_corners.ts"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",

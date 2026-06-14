@@ -1,0 +1,12 @@
+{
+  "seed": 1234,
+  "inputHW": 128,
+  "baseRes": 200,
+  "arch": [8, 16, 32, 32, 64],
+  "epochs": 90,
+  "augPerBase": 28,
+  "lr": 0.002,
+  "huberBeta": 0.1,
+  "jitter": 0.12,
+  "weightDecay": 0.0005
+}

@@ -32,7 +32,8 @@ const CONV = [
   { inC: 16, outC: 32 },
   { inC: 32, outC: 32 },
 ]
-const GAP_C = 32
+const LAST_HW = 8 // 128 →64→32→16→8 through the 4 stride-2 convs
+const FLAT = 32 * LAST_HW * LAST_HW // flatten the last conv map (localisation needs spatial)
 const HID = 64
 
 /** Deterministic PRNG (mulberry32) so the fixture is reproducible. */
@@ -54,7 +55,7 @@ for (const c of CONV) {
   pack.push({ data: rnd(c.outC * c.inC * 9), dtype: 'int8' })
   pack.push({ data: rnd(c.outC), dtype: 'float32' })
 }
-pack.push({ data: rnd(GAP_C * HID), dtype: 'int8' })
+pack.push({ data: rnd(FLAT * HID, 0.05), dtype: 'int8' })
 pack.push({ data: rnd(HID), dtype: 'float32' })
 pack.push({ data: rnd(HID * 8), dtype: 'int8' }) // NON-zero head → exercises the maths
 pack.push({ data: rnd(8), dtype: 'float32' })
@@ -80,8 +81,8 @@ CONV.forEach((c, i) => {
   layers.push({ type: 'relu' })
 })
 const base = CONV.length * 2
-layers.push({ type: 'globalavgpool' })
-layers.push({ type: 'dense', inFeatures: GAP_C, outFeatures: HID, weight: ref(base), bias: ref(base + 1) })
+layers.push({ type: 'flatten' })
+layers.push({ type: 'dense', inFeatures: FLAT, outFeatures: HID, weight: ref(base), bias: ref(base + 1) })
 layers.push({ type: 'relu' })
 layers.push({ type: 'dense', inFeatures: HID, outFeatures: 8, weight: ref(base + 2), bias: ref(base + 3) })
 
