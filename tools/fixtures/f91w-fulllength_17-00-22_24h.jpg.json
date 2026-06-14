@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "corners": [
+    {
+      "x": 390,
+      "y": 1692
+    },
+    {
+      "x": 758,
+      "y": 1692
+    },
+    {
+      "x": 758,
+      "y": 1852
+    },
+    {
+      "x": 390,
+      "y": 1852
+    }
+  ],
+  "stratum": "moderate",
+  "eval": true,
+  "source": {
+    "url": "https://commons.wikimedia.org/wiki/File:Casio_F-91W_watch_(2023)_(front_view_-_full_length).jpg",
+    "license": "CC-BY-SA-4.0",
+    "credit": "Multicherry"
+  },
+  "note": "Full-length studio shot: standard display but the LCD is small and off-centre in a tall frame — the 'find the LCD anywhere in frame' moderate case."
+}

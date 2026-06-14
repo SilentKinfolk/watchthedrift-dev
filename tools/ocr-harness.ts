@@ -235,6 +235,19 @@ async function main(): Promise<void> {
   printGate(gate)
   if (!gate.pass) process.exitCode = 1
 
+  // Issue #10 adds the easy+moderate eval reals (the recoverable strata the harvested
+  // CC/PD reals target). Surface the gate on that pooled slice too — advisory while it
+  // is under the sample floor, exactly like the all-strata gate. The ENFORCING gate
+  // (the exit code above) stays the all-strata pool, because PLAN keeps the
+  // confidently-wrong ceiling across every stratum (hard included — a wrong read on a
+  // hard image is still the cardinal sin), so this slice is informational only.
+  const reportEM = aggregate(
+    scoredEval.filter((it) => it.stratum === 'easy' || it.stratum === 'moderate'),
+    STRATA,
+  )
+  printMetrics('EVAL GOLD — easy+moderate pool (issue #10, informational)', reportEM)
+  printGate(evaluateGate(reportEM.overall))
+
   await demonstrateRectification(files)
 }
 
