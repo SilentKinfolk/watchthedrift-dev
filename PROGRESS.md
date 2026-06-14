@@ -66,10 +66,12 @@ npm install
 npm run dev      # http://localhost:5173 — secure context, so the camera works
 npm test         # Vitest (drift + time-sync + parser)
 npm run build    # typecheck + production build → dist/
-npm run harness  # run the segment decoder over tools/ images, save overlays to tools/out/
+npm run harness  # decoder + corner-stage isolation eval + calibration over tools/ images → tools/out/
 npm run augment  # (v2) clean labelled photos → hard training variants in tools/training/
 npm run size     # (v2) first-load byte-budget gate (≤5 MB) over dist/
-npm run gen:dummy # (v2) regenerate the placeholder corner model in public/models/
+npm run prep:corners        # (v2 #11) derive training corner labels → tools/train/corners-train.json
+npm run gen:parity          # (v2 #11) write the numpy↔TS parity fixture
+python3 tools/train/train_corners.py   # (v2 #11) numpy trainer → public/models/corner-v1.{bin,json}
 ```
 Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 
@@ -86,8 +88,9 @@ Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
   - **`RectifyingSegmentRecognizer.ts` — the app's v2 engine: learned corners →
     homography → frontal crop → `segments.ts`. Abstains to the raw decode.**
   - `corners.ts` / `KernelCornerSource.ts` — the `CornerSource` seam + the learned
-    detector that runs the bespoke kernel (`src/ml/`); ships a dummy that abstains
-    until trained weights land (#11).
+    detector that runs the bespoke kernel (`src/ml/`); ships the trained `corner-v1`
+    (#11). Abstains on an implausible quad → raw decode (never worse than v1).
+    `toModelInput` area-averages (antialiased) the downscale to match the trainer.
   - `rectify.ts` — the deterministic homography (corners → frontal crop).
   - `CascadeRecognizer.ts` — a generic priority-cascade primitive, no engines wired
     today (Tesseract dropped).
@@ -102,7 +105,14 @@ Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 - `src/ml/` — the bespoke inference runtime (issue #9): `kernel.ts` (conv/relu/
   pool/dense/softmax, pure typed-array ops), `blob.ts` (weights-blob contract +
   loader), `model.ts` (forward runner + reference-vector parity).
-- `tools/ocr-harness.ts` — headless harness; reads `tools/fixtures/` + `tools/local/` (both gitignored images), decodes, scores vs filename labels, writes annotated overlays to `tools/out/`.
+- `src/eval/cornerError.ts` — corner-stage isolation metric (#11); `calibrate.ts` —
+  Platt scaling for the v1 decoder's confidence + abstain-threshold chooser (#11).
+- `tools/train/` — the numpy corner trainer (#11): `cnn_numpy.py` (the TS kernel's
+  numpy mirror + blob format), `train_corners.py` (tiny-CNN + hand-written backprop →
+  int8 weights), `prep_corners.ts` (auto corner labels via the v1 detector),
+  `gen_parity_fixture.ts` + `check_parity.py` (numpy↔TS forward parity), `config.json`
+  (the reproducible run). Only the trained weights ship; corpus stays gitignored.
+- `tools/ocr-harness.ts` — headless harness; reads `tools/fixtures/` + `tools/local/` (both gitignored images), decodes, scores vs filename labels, runs the corner-stage isolation eval + read-success + calibration + an angle-sweep rectification demo, writes annotated overlays to `tools/out/`.
 - `.github/workflows/deploy.yml` — Pages deploy.
 
 ## The recognition engine (what + how)
