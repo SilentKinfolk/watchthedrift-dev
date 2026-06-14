@@ -7,7 +7,7 @@ A single-screen web app: point a phone's rear camera at a Casio F-91W, read the
 time off the face **on-device**, compare it to internet (NTP-style) time at the
 moment of capture, and show how many seconds the watch is off — e.g. `+6 s (fast)`.
 Ephemeral (no storage/history/logging), plain black-and-white UI, installable
-later as a PWA.
+as a PWA with offline reading (v2 #13).
 
 ## Status at a glance
 | Piece | State |
@@ -19,7 +19,7 @@ later as a PWA.
 | NTP-style time sync (timeapi.io + fallbacks, RTT-compensated) | ✅ done, unit-tested |
 | Drift maths (nearest-mod-period, 12h/24h, wrap) | ✅ done, unit-tested |
 | Recognition (reading the digits) | 🟡 **whole-frame: learned corners find the LCD anywhere → frontal crop → v1 decoder; clean shots, live on-device** — see below |
-| PWA install/offline | ⏸ on hold (deliberately) |
+| PWA install / offline reading | ✅ **installable; a service worker caches app + model so reading works offline; offline → "connect to measure", never the device clock** (v2 #13) |
 
 **Status of reading (v2, #12 — the alignment box is gone):** the custom F-91W
 segment decoder is still the reader, but the app no longer asks you to line the time
@@ -79,7 +79,7 @@ npm run augment  # (v2) clean labelled photos → hard training variants in tool
 npm run size     # (v2) first-load byte-budget gate (≤5 MB) over dist/
 npm run prep:corners        # (v2 #11) derive training corner labels → tools/train/corners-train.json
 npm run gen:parity          # (v2 #11) write the numpy↔TS parity fixture
-python3 tools/train/train_corners.py   # (v2 #11) numpy trainer → public/models/corner-v1.{bin,json}
+python3 tools/train/train_corners.py   # (v2 #11) numpy trainer → src/models/corner-v1.{bin,json} (a ?url build asset, #13)
 ```
 Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 
@@ -87,7 +87,7 @@ Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 - `src/ui/Screen.ts` — the single-screen state machine (idle/starting/preview/scanning/result/error), `?debug=1` view; v2 #12 feeds the whole frame and drives exposure-gated live capture feedback (no alignment box).
 - `src/ui/feedback.ts` — pure mapping {legibility, gotRead} → the live scan line (too-dark / glare / found / searching), with an honest priority (#12).
 - `src/camera/Camera.ts` — getUserMedia rear camera + frame capture/timestamp.
-- `src/time/TimeSync.ts`, `src/time/sources.ts` — RTT-compensated offset; timeapi.io → Cloudflare → Date-header → device-clock chain.
+- `src/time/TimeSync.ts`, `src/time/sources.ts` — RTT-compensated offset; timeapi.io → Cloudflare → Date-header chain. On total failure it still resolves (degraded), but `TimeSync.trusted` is false and the app then **refuses to measure** — offline → "connect to measure", never the device clock (#13).
 - `src/drift/Drift.ts` (+ `.test.ts`) — signed offset, nearest difference mod 12h/24h.
 - `src/recognize/`
   - `Recognizer.ts` — engine interface (swappable).
@@ -125,6 +125,15 @@ Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
   `gen_parity_fixture.ts` + `check_parity.py` (numpy↔TS forward parity), `config.json`
   (the reproducible run). Only the trained weights ship; corpus stays gitignored.
 - `tools/ocr-harness.ts` — headless harness; reads `tools/fixtures/` + `tools/local/` (both gitignored images), decodes, scores vs filename labels, runs the corner-stage isolation eval + read-success + calibration + an angle-sweep rectification demo, writes annotated overlays to `tools/out/`.
+- `vite.config.ts` + `scripts/service-worker.mjs` (`+ .test.ts`) — the offline PWA (#13).
+  The build plugin precaches the shell + all hashed assets (JS/CSS + the **`?url` corner
+  model**, now a content-hashed `assets/` file, not a `public/` passthrough) + the
+  manifest/icons; the SW cache name is a hash of that list, so any app/model change
+  rotates it → **atomic app+model versioning**. The SW is cache-first but leaves the
+  time sources untouched (cross-origin / non-GET / no-store), so offline they fail
+  honestly. `main.ts` registers it (prod only); `index.html` links the manifest + icons.
+- `public/manifest.webmanifest` + `public/icon-*.png` — installable PWA + a minimal B&W
+  clock-with-drift icon (`scripts/gen-icons.mjs`, pure-geometry @napi-rs/canvas).
 - `.github/workflows/deploy.yml` — Pages deploy.
 
 ## The recognition engine (what + how)
