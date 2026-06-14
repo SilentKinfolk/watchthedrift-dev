@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "architecture": "corner-dummy-cnn-v1",
+  "architecture": "corner-cnn-v1",
   "input": {
     "channels": 1,
     "height": 128,
@@ -23,7 +23,7 @@
         "offset": 0,
         "length": 72,
         "dtype": "int8",
-        "scale": 0.0015507825012282125,
+        "scale": 0.010205530038259825,
         "zeroPoint": 0
       },
       "bias": {
@@ -49,7 +49,7 @@
         "offset": 104,
         "length": 1152,
         "dtype": "int8",
-        "scale": 0.0015737265348434448,
+        "scale": 0.006156255481759382,
         "zeroPoint": 0
       },
       "bias": {
@@ -75,7 +75,7 @@
         "offset": 1320,
         "length": 4608,
         "dtype": "int8",
-        "scale": 0.001573868623868687,
+        "scale": 0.006642121319652568,
         "zeroPoint": 0
       },
       "bias": {
@@ -90,7 +90,7 @@
     {
       "type": "conv2d",
       "inChannels": 32,
-      "outChannels": 64,
+      "outChannels": 32,
       "kernelH": 3,
       "kernelW": 3,
       "strideH": 2,
@@ -99,13 +99,36 @@
       "padW": 1,
       "weight": {
         "offset": 6056,
-        "length": 18432,
+        "length": 9216,
         "dtype": "int8",
-        "scale": 0.0015747555362896656,
+        "scale": 0.004625351431449651,
         "zeroPoint": 0
       },
       "bias": {
-        "offset": 24488,
+        "offset": 15272,
+        "length": 32,
+        "dtype": "float32"
+      }
+    },
+    {
+      "type": "relu"
+    },
+    {
+      "type": "flatten"
+    },
+    {
+      "type": "dense",
+      "inFeatures": 2048,
+      "outFeatures": 64,
+      "weight": {
+        "offset": 15400,
+        "length": 131072,
+        "dtype": "int8",
+        "scale": 0.0066798370895979784,
+        "zeroPoint": 0
+      },
+      "bias": {
+        "offset": 146472,
         "length": 64,
         "dtype": "float32"
       }
@@ -114,36 +137,18 @@
       "type": "relu"
     },
     {
-      "type": "globalavgpool"
-    },
-    {
       "type": "dense",
       "inFeatures": 64,
-      "outFeatures": 21501,
-      "weight": {
-        "offset": 24744,
-        "length": 1376064,
-        "dtype": "int8",
-        "scale": 0.0015748022344168715,
-        "zeroPoint": 0
-      }
-    },
-    {
-      "type": "relu"
-    },
-    {
-      "type": "dense",
-      "inFeatures": 21501,
       "outFeatures": 8,
       "weight": {
-        "offset": 1400808,
-        "length": 172008,
+        "offset": 146728,
+        "length": 512,
         "dtype": "int8",
-        "scale": 1,
+        "scale": 0.0018703929511121116,
         "zeroPoint": 0
       },
       "bias": {
-        "offset": 1572816,
+        "offset": 147240,
         "length": 8,
         "dtype": "float32"
       }
@@ -158,14 +163,14 @@
       "pattern": "ramp"
     },
     "output": [
-      0.5,
-      0.5,
-      0.5,
-      0.5,
-      0.5,
-      0.5,
-      0.5,
-      0.5
+      0.5882930159568787,
+      0.4973856806755066,
+      0.5139758586883545,
+      0.5049887895584106,
+      0.5145756602287292,
+      0.48896366357803345,
+      0.5884413123130798,
+      0.4848799407482147
     ]
   }
 }

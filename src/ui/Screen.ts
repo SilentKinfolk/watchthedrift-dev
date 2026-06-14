@@ -34,13 +34,13 @@ export class Screen {
   // The decoder sits behind the rectification stage (#4): given the LCD's four
   // corners it reads a frontal, straightened crop. The corners come from the learned
   // KernelCornerSource (#9), loaded lazily in recognizer.init(); a `?corners=` debug
-  // override sits in front of it. The model shipped today is a DUMMY (it abstains —
-  // see KernelCornerSource), so until the trained weights land (#11) the detector
-  // returns null and this is identical to feeding the raw crop straight to v1.
+  // override sits in front of it. The shipped model is the trained `corner-v1` (#11);
+  // when it can't find a plausible LCD it abstains (returns null) and the pipeline
+  // falls back to feeding the raw crop straight to v1 — never worse than v1.
   private readonly recognizer = new RectifyingSegmentRecognizer(
     firstAvailable(
       manualCornerSource(),
-      kernelCornerSource(() => fetchKernelModel(import.meta.env.BASE_URL ?? '/', 'corner-dummy-v1')),
+      kernelCornerSource(() => fetchKernelModel(import.meta.env.BASE_URL ?? '/', 'corner-v1')),
     ),
   )
   private readonly debug = isDebug()

@@ -142,7 +142,7 @@ export function kernelCornerSource(load: () => Promise<LoadedModel | null>, id =
 
 /**
  * Browser loader for a same-origin model asset (manifest JSON + binary blob), e.g.
- * `models/corner-dummy-v1.{json,bin}` under the Vite base URL. Returns null on any
+ * `models/corner-v1.{json,bin}` under the Vite base URL. Returns null on any
  * failure so the source abstains. Not exercised by unit tests (which inject an
  * in-memory model); used by the live app (Screen.ts).
  */
