@@ -32,6 +32,13 @@ accuracy on the harder eval-gold strata is **data-limited** — corners good on
 clean/front-on views, weaker on distant/inverted ones — a known limit routed to the
 v2.1 hard-stratum issue (#21); it abstains rather than guessing where it can't.
 
+**v2 capture so far (#12):** the **alignment box is gone** — the app feeds the whole
+frame to that corner detector, so there's nothing to line up (this also fixes a
+train/serve skew: the detector is trained on whole frames). A scan shows minimal,
+honest live feedback (found it / hold steady / glare), and below an ambient-light
+floor it **abstains** ("find more light") rather than guess. The time check still
+needs the network; offline behaviour is #13.
+
 ## Direction (read these first)
 
 - **[`SPEC.md`](SPEC.md)** — the directional north star for v2.

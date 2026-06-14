@@ -232,16 +232,6 @@ a:hover {
   margin-top: 14px;
 }
 
-/* Alignment guide drawn over the live preview. White with a thin black outline
-   so it reads against any background, in keeping with the B&W look. */
-/* Position + size set inline from the crop fractions (see Screen.applyGuide). */
-.guide {
-  position: absolute;
-  border: 2px solid #fff;
-  outline: 1px solid #000;
-  pointer-events: none;
-}
-
 .mode {
   display: inline-flex;
   align-items: baseline;
