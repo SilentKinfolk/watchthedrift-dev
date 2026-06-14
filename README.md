@@ -69,12 +69,13 @@ PLAN.md fixes for the on-device models + runtime. The threshold is one constant
 
 **What counts as first-load** (the bytes the browser downloads to show the screen
 and do the first reading): the entry `index.html`, the bundled app under
-`dist/assets/**` (JS/CSS + any chunks), and any model/runtime asset the app fetches
-at runtime that is declared in `EAGER_RUNTIME_ASSETS` (empty until the first model
-lands — issue #9 registers it there). Lazy/passthrough files that aren't fetched at
-first load — today the *unwired* Tesseract data (`dist/traineddata/`, removed in
-issue #11) — don't count, but are listed and **flagged if large**, so a forgotten
-eager asset can't silently slip the gate.
+`dist/assets/**` (JS/CSS + any chunks — the bespoke inference kernel lands here, no
+separate wasm runtime), and any model asset the app fetches at runtime declared in
+`EAGER_RUNTIME_ASSETS`. Issue #9 registers `models/**` there: the corner-detector
+model + manifest, which `KernelCornerSource` fetches before the first reading (~1.5
+MB today — a dummy placeholder until trained weights land in #11). Other
+lazy/passthrough files that aren't fetched at first load don't count, but are listed
+and **flagged if large**, so a forgotten eager asset can't silently slip the gate.
 
 ### Precision-first eval gate (confidently-wrong ≤ ~0.5%)
 

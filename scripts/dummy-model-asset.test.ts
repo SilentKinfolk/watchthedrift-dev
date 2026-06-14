@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadModel, type Manifest } from '../ml/blob'
-import { runReference } from '../ml/model'
-import { outputToQuad } from './KernelCornerSource'
+import { loadModel, type Manifest } from '../src/ml/blob'
+import { runReference } from '../src/ml/model'
+import { outputToQuad } from '../src/recognize/KernelCornerSource'
 
 // Validate the COMMITTED dummy asset end-to-end — the one the live app actually
 // ships and the byte-gate measures. Regenerate with `npm run gen:dummy`.
