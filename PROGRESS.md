@@ -14,24 +14,32 @@ later as a PWA.
 | --- | --- |
 | Hosting (GitHub Pages + Actions auto-deploy) | ✅ done |
 | UI / single-screen state machine (B&W) | ✅ done |
-| Capture flow | ✅ **live scan** (point-and-catch; locks when two reads agree) |
+| Capture flow | ✅ **live scan, no alignment box** (v2 #12; point-and-catch, locks when two reads agree) |
 | Camera capture (rear cam, 1080p, timestamped) | ✅ done |
 | NTP-style time sync (timeapi.io + fallbacks, RTT-compensated) | ✅ done, unit-tested |
 | Drift maths (nearest-mod-period, 12h/24h, wrap) | ✅ done, unit-tested |
-| Recognition (reading the digits) | 🟡 **reads the time row framed in a box; clean shots, live on-device** — see below |
+| Recognition (reading the digits) | 🟡 **whole-frame: learned corners find the LCD anywhere → frontal crop → v1 decoder; clean shots, live on-device** — see below |
 | PWA install/offline | ⏸ on hold (deliberately) |
 
-**Status of reading:** the custom F-91W segment decoder is the engine, and it reads
-the **alignment box** (`TIME_CROP`). The app crops to the on-screen box; within that
-crop the decoder locates the bright LCD, re-thresholds it with a local Otsu, and
-decodes `HH:MM:SS` (candidate patches that aren't the display fail to yield a valid
-time and are dropped). **We went back to the box** after a brief whole-frame
-"auto-detect anywhere, no box" version: with no crop, a slightly off-angle or
-off-centre watch let the bright background dominate the global threshold so the LCD
-binarised to all-black — nothing to read. Cropping tight to the time row keeps the
-binarisation LCD-dominated and robust; teaching it to find the watch anywhere again
-is a job for a future ML model, not the hand-written detector. Reads clean front-on
-shots (e.g. `15:53:08`, `14:37:51`, conf ~0.71); leftover misses are pre-existing —
+**Status of reading (v2, #12 — the alignment box is gone):** the custom F-91W
+segment decoder is still the reader, but the app no longer asks you to line the time
+row up in a box. It feeds the **whole frame**; the learned corner detector (#11) finds
+the LCD wherever it sits → homography → frontal crop → the decoder reads it (on a
+detector abstain it falls back to a raw whole-frame decode, which flood-fills for the
+LCD itself, so it is never worse than v1). The honesty gate is now also exposure-based:
+below an ambient-light floor the app **abstains** ("find more light") instead of
+guessing, and a scan shows minimal live feedback (found it / hold steady / glare).
+
+_v1 history (why the box existed, and why it's now safe to drop):_ v1 cropped to the
+on-screen box (`TIME_CROP`); within that crop the decoder located the bright LCD,
+re-thresholded it with a local Otsu, and decoded `HH:MM:SS`. v1 **went back to the
+box** after a brief whole-frame "auto-detect anywhere" version, because with no crop a
+slightly off-angle or off-centre watch let the bright background dominate the global
+threshold so the LCD binarised to all-black. Teaching it to find the watch anywhere
+again was then called "a job for a future ML model, not the hand-written detector" —
+which is exactly the #11 corner detector that now lets v2 drop the box for good.
+
+Reads clean front-on shots (e.g. `15:53:08`, `14:37:51`, conf ~0.71); leftover misses are pre-existing —
 faint/degraded segments, the small seconds-units digit, and angled/perspective shots
 (see "Known limits") — all failing *safe* (retake) except a genuinely-faint segment
 that can read as a confident off-by-one. `?debug=1` shows the detected LCD (cropped +
@@ -76,7 +84,8 @@ python3 tools/train/train_corners.py   # (v2 #11) numpy trainer → public/model
 Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 
 ## Key files
-- `src/ui/Screen.ts` — the single-screen state machine (idle/preview/measuring/result/retake/errors), `?debug=1` view, live `W/H` box controls.
+- `src/ui/Screen.ts` — the single-screen state machine (idle/starting/preview/scanning/result/error), `?debug=1` view; v2 #12 feeds the whole frame and drives exposure-gated live capture feedback (no alignment box).
+- `src/ui/feedback.ts` — pure mapping {legibility, gotRead} → the live scan line (too-dark / glare / found / searching), with an honest priority (#12).
 - `src/camera/Camera.ts` — getUserMedia rear camera + frame capture/timestamp.
 - `src/time/TimeSync.ts`, `src/time/sources.ts` — RTT-compensated offset; timeapi.io → Cloudflare → Date-header → device-clock chain.
 - `src/drift/Drift.ts` (+ `.test.ts`) — signed offset, nearest difference mod 12h/24h.
@@ -96,10 +105,13 @@ Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
     today (Tesseract dropped).
   - `binarize.ts` — `toGray` + histogram + Otsu (shared by the decoder).
   - `overlay.ts` — shared decode-overlay renderer (harness PNGs + app `?debug=1`).
-  - `preprocess.ts` — crop + scale (down to ≤1600 px longest side); the decoder
-    owns binarisation.
-  - `geometry.ts` — the alignment box (`TIME_CROP`): a small, tight box around the
-    time row; the decoder reads + locally re-thresholds the LCD it finds within it.
+  - `preprocess.ts` — crop (the whole frame by default in v2 #12) + scale (down to
+    ≤1600 px longest side); the decoder owns binarisation.
+  - `exposure.ts` — frame exposure (mean luma + blown-out fraction) → too-dark/glare
+    legibility, the honesty gate for the box-free capture (#12).
+  - `geometry.ts` — the read region: `FULL_FRAME` by default (v2 #12 dropped the
+    alignment box so the detector finds the LCD anywhere); a `?crop=` debug override
+    can still restrict it for dev work.
   - `parse.ts` — text → HH:MM:SS parser; idle in v2 (Tesseract removed), retained
     for the deferred learned reader (#21).
 - `src/ml/` — the bespoke inference runtime (issue #9): `kernel.ts` (conv/relu/
@@ -119,7 +131,8 @@ Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 **It is a hand-written, pure-TypeScript algorithm — no ML, no cloud, no API.** It
 implements the classic seven-segment-OCR approach (à la `ssocr`), tailored to the
 F-91W's fixed layout. `decodeSegments(rgba, w, h)` takes whatever pixels it's handed
-— the **boxed crop** in the app, a full frame in the harness — and owns all binarisation:
+— the corner-detector's frontal crop (or the whole frame on abstain) in the v2 app, a
+full frame in the harness — and owns all binarisation:
 1. **Global Otsu** over the crop → a coarse ink mask used *only to locate* bright
    regions (dark digits AND dark case/bezel become ink).
 2. **Auto-detect candidate LCDs** = the largest connected *bright* (non-ink)
@@ -134,17 +147,20 @@ F-91W's fixed layout. `decodeSegments(rgba, w, h)` takes whatever pixels it's ha
    fraction) and mapping the 7-bit pattern to a digit via a lookup table.
 6. **Assemble & verify** `HH:MM:SS` (colon as anchor). Keep the candidate with the
    highest-confidence valid in-range time — only the real display produces one, so
-   non-LCD candidates are rejected here. So the box only has to *contain* the time
-   row — a stray bright patch that creeps into it is dropped, not misread.
+   non-LCD candidates are rejected here — so a stray bright patch elsewhere in the
+   frame is dropped, not misread. (This whole-frame candidate search is also the
+   abstain fallback when the corner detector can't place the LCD.)
 
 (We also tried OR-ing an adaptive local threshold into step 1 to recover faint
 segments, but the F-91W LCD's faint background mottling reads as speckle under any
 setting aggressive enough to help — global Otsu is simpler and more reliable.)
 
-**Current result:** reads clean front-on shots in good light — frame the time row in
-the box and the live scan catches it in a moment (e.g. `15:53:08`, `14:37:51`, conf
-~0.71). The harness still feeds **full-frame** photos to exercise candidate detection;
-the app crops to the box first, which keeps the binarisation LCD-dominated. Known misses:
+**Current result:** reads clean front-on shots in good light — point at the watch
+(no box) and the live scan catches it in a moment (e.g. `15:53:08`, `14:37:51`, conf
+~0.71). Both the harness and the v2 app now feed **full frames** (the app via #12, so
+serving matches the corner detector's training); rectification hands the decoder a
+frontal crop, and on abstain its own candidate search keeps the binarisation
+LCD-dominated. Known misses:
 - **dim / low-contrast light (the current real-world blocker, on hold).** The F-91W's
   reflective LCD has no backlight, so in dim light it barely out-shines the dark
   case — and detection finds the LCD precisely *by* it being a bright patch, so it
