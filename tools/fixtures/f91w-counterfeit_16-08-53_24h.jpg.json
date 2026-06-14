@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "corners": [
+    {
+      "x": 732,
+      "y": 1252
+    },
+    {
+      "x": 1693,
+      "y": 1252
+    },
+    {
+      "x": 1693,
+      "y": 1685
+    },
+    {
+      "x": 732,
+      "y": 1685
+    }
+  ],
+  "stratum": "easy",
+  "eval": true,
+  "source": {
+    "url": "https://commons.wikimedia.org/wiki/File:Counterfeit_Casio_F-91W_digital_watch.jpg",
+    "license": "CC-BY-SA-4.0",
+    "credit": "Petar Milošević"
+  },
+  "note": "Counterfeit/clone F-91W — clean, front-on, standard display; v1 reads it correctly. Easy eval real that also probes device reach (a visually near-identical clone)."
+}

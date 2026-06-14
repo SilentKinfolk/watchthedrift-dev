@@ -82,6 +82,40 @@ samples — a 0.5% rate is meaningless on a handful of images — and a real FAI
 committed eval data exists. The gate *logic* is also unit-tested in Vitest, which
 runs in CI today.
 
+## Web harvester (issue #10)
+
+`harvest.ts` is a **license-aware** harvester that pulls real F-91W photos from
+Wikimedia Commons into the gitignored local corpus, writing a provenance sidecar
+(url / licence / credit) beside each. It is the data source that feeds annotation
+(below) and augmentation, and ultimately the corner detector (#11).
+
+```sh
+npm run harvest                              # ~25 "Casio F-91W" images → tools/local/
+npm run harvest -- --query "Casio F-91W" --limit 40
+npm run harvest -- --redistributable-only    # CC/PD only (skip restricted)
+npm run harvest -- --dry-run                 # list candidates + licence tiers; write nothing
+npm run harvest -- --help
+```
+
+- **Two rights tiers** (PLAN "Rights — the line is redistribution, not training").
+  *Any* source may be **trained on locally**; only **CC-BY / CC-BY-SA / CC0 / PD**
+  may ever be **committed** (redistributed). The harvester records each image's
+  licence in its sidecar `source` and prints the tier per image + a summary, so the
+  CC/PD-vs-other split is captured. `classifyLicense` defaults the *unrecognised* to
+  restricted, so a parsing gap can never leak a non-free image into the committable set.
+- **Polite.** Sends a **descriptive User-Agent** (`upload.wikimedia.org` 400s a
+  default one), paces requests (`--delay`, default 500 ms), and backs off on HTTP
+  429/503 (honouring `Retry-After`). Idempotent: existing images are skipped unless
+  `--overwrite`; re-harvesting refreshes provenance without clobbering annotations.
+- **Output is gitignored.** Images land in `tools/local/` — never committed. To turn
+  a redistributable image into committed **eval gold**, annotate it (corners + time +
+  stratum, below), set `eval: true`, copy it to
+  `tools/fixtures/<descriptive>_HH-MM-SS_24h.jpg`, and add a CREDITS row — a
+  deliberate step, never automatic.
+- **Source-agnostic core.** The parse / licence / slug logic lives in
+  [`../src/eval/harvest.ts`](../src/eval/harvest.ts) (pure, unit-tested without a
+  network); Openverse / Flickr can be added behind the same `HarvestImage` type.
+
 ## Corner-annotation tool (issue #8)
 
 Write or update the **corner-label sidecar** for a real photo — "click the 4 LCD
@@ -169,24 +203,32 @@ The harness prints two precision-first tables and runs the gate on the **held-ou
 eval gold** (`eval: true`), never on the training seed (grading on data the model
 trains on would flatter the result).
 
-**Eval gold** — held out, weighted to hard, the gate's truth set:
+**Eval gold** — held out, the gate's truth set. The issue-#10 harvest filled the
+easy/moderate gap (was hard-only):
 
 | stratum | n | correct | abstain | wrong | wrong % |
 | --- | --- | --- | --- | --- | --- |
+| easy | 1 | 1 | 0 | 0 | 0.0% |
+| moderate | 2 | 1 | 1 | 0 | 0.0% |
 | hard | 2 | 0 | 1 | 1 | 50.0% |
-| **overall** | **2** | **0** | **1** | **1** | **50.0%** |
+| **overall** | **5** | **2** | **2** | **1** | **20.0%** |
 
 **All labelled** — eval gold + training seed, for context:
 
 | stratum | n | correct | abstain | wrong | wrong % |
 | --- | --- | --- | --- | --- | --- |
-| easy (seed) | 1 | 1 | 0 | 0 | 0.0% |
-| hard (eval) | 2 | 0 | 1 | 1 | 50.0% |
-| **overall** | **3** | **1** | **1** | **1** | **33.3%** |
+| easy | 2 | 2 | 0 | 0 | 0.0% |
+| moderate | 2 | 1 | 1 | 0 | 0.0% |
+| hard | 2 | 0 | 1 | 1 | 50.0% |
+| **overall** | **6** | **3** | **2** | **1** | **16.7%** |
 
-Gate: **ADVISORY** (2 eval < 200 min samples — a 0.5% ceiling is unobservable that
-small). The lone confidently-wrong read is the faint-segment eval fixture
-(`19:45:08` mis-read as `19:45:09`, conf 0.71) — the exact cardinal-sin case the
-learned reader (#10) must fix; the small-seconds eval fixture abstains honestly, and
-the clean seed fixture reads correctly. This is what the learned reader (#10) is
-measured against.
+Gate: **ADVISORY** (5 eval < 200 min samples — a 0.5% ceiling is unobservable that
+small). What the new easy/moderate reals show: the easy clone (`16:08:53`) and the
+moderate full-length (`17:00:22`) read **correctly**; the moderate inverted-display
+real (`20:19:48`) **abstains** honestly (v1 expects dark-on-light) — neither is a new
+confidently-wrong read. The lone confidently-wrong read is still the hard
+faint-segment fixture (`19:45:08` mis-read as `19:45:09`, conf 0.71) — the
+cardinal-sin case the learned reader (v2.1, #21) must fix; the small-seconds hard
+fixture abstains honestly. The harness also prints an **easy+moderate pool** readout
+(0 % confidently-wrong here): informational, since the enforced gate spans all strata
+(hard included) per PLAN.

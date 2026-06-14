@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "corners": [
+    {
+      "x": 598,
+      "y": 438
+    },
+    {
+      "x": 1374,
+      "y": 462
+    },
+    {
+      "x": 1394,
+      "y": 1295
+    },
+    {
+      "x": 598,
+      "y": 1271
+    }
+  ],
+  "stratum": "moderate",
+  "eval": true,
+  "source": {
+    "url": "https://commons.wikimedia.org/wiki/File:Customised_Casio_F-91W_watch_with_inverted_display_(time).jpg",
+    "license": "CC-BY-SA-4.0",
+    "credit": "Multicherry"
+  },
+  "note": "Customised F-91W with an INVERTED (negative) LCD, slight rotation, worn glass. Clearly legible (20:19:48) but v1 abstains — it expects dark-on-light, so this is an honest abstain, not a wrong read. Corners are an agent estimate (v1 auto-detect fails on the dark display); spot-check."
+}
