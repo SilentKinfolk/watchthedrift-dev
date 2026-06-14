@@ -15,10 +15,14 @@ export const BUDGET_BYTES = 5 * 1024 * 1024 // ~5 MB (5 MiB)
  * Glob patterns (dist-relative, forward slashes) for model/runtime assets the
  * app fetches at runtime at/before the first reading — i.e. public/ passthrough
  * assets that must count toward first-load even though they aren't bundled into
- * assets/**. EMPTY until a model lands; issue #9 adds e.g. 'models/**' or a
- * specific 'models/corner-v1.onnx'. Supports `*` (intra-segment) and `**` (any).
+ * assets/**. The corner-detector model + its manifest (issue #9) live under
+ * public/models/ and are fetched by KernelCornerSource before the first reading,
+ * so they count. (The bespoke TS inference kernel itself is plain app code — it
+ * lands in assets/** and is counted there for free; there is no separate wasm
+ * runtime to register, which is the whole point of PLAN decision #2.)
+ * Supports `*` (intra-segment) and `**` (any).
  */
-export const EAGER_RUNTIME_ASSETS = []
+export const EAGER_RUNTIME_ASSETS = ['models/**']
 
 /** Uncounted files at/above this size are flagged — catches a forgotten eager asset. */
 export const WARN_UNCOUNTED_BYTES = 256 * 1024 // 256 KiB

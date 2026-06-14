@@ -14,7 +14,8 @@
     "size": "node scripts/check-bundle-size.mjs",
     "harness": "node --experimental-strip-types tools/ocr-harness.ts",
     "augment": "node --experimental-strip-types tools/augment.ts",
-    "annotate": "node --experimental-strip-types tools/annotate.ts"
+    "annotate": "node --experimental-strip-types tools/annotate.ts",
+    "gen:dummy": "node --experimental-strip-types tools/gen-dummy-model.ts"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",
