@@ -19,7 +19,6 @@
 //     the network (PLAN: reading works offline).
 
 import type { Quad, RawImage, Pt } from './rectify.ts'
-import { sampleBilinear } from './rectify.ts'
 import type { CornerSource } from './corners.ts'
 import { runModel } from '../ml/model.ts'
 import { loadModel, type LoadedModel, type Manifest } from '../ml/blob.ts'
@@ -32,21 +31,41 @@ const COORD_SLACK = 0.25
 
 /**
  * Resample a frame to the model's input as a normalised grayscale CHW tensor:
- * bilinear downscale → luma → `(v/255 - mean)/std`. Pure, so it unit-tests without a
- * DOM. (The #11 trainer must preprocess identically for train↔infer parity; the
- * reference-vector parity check covers the kernel forward pass, this covers the
- * front of the pipe.)
+ * AREA-AVERAGE (box) downscale → luma → `(v/255 - mean)/std`. Pure, so it unit-tests
+ * without a DOM.
+ *
+ * Antialiased, not point-sampled, by design: the model input is ~128² but a phone
+ * frame is ~12–20× larger per axis, and a single bilinear tap at that ratio aliases
+ * away most of the LCD — and worse, it makes the served image differ from the
+ * antialiased downscale the #11 trainer learned on (a train↔serve skew that inflated
+ * the corner error). Averaging the full source footprint of each output pixel
+ * matches the trainer's preprocessing and keeps the digit row legible. (The
+ * reference-vector parity check covers the kernel forward pass; this covers the front
+ * of the pipe.)
  */
 export function toModelInput(image: RawImage, spec: Manifest['input']): Float32Array {
   const { width: dstW, height: dstH, mean, std } = spec
+  const { data, width: srcW, height: srcH } = image
   const out = new Float32Array(spec.channels * dstH * dstW) // channels === 1 (grayscale)
   for (let ty = 0; ty < dstH; ty++) {
-    // Map the destination pixel CENTRE back into the source (area-preserving).
-    const sy = ((ty + 0.5) * image.height) / dstH - 0.5
+    // The source row band this output row covers (area-preserving), clamped + ≥1px.
+    const sy0 = Math.floor((ty * srcH) / dstH)
+    const sy1 = Math.max(sy0 + 1, Math.ceil(((ty + 1) * srcH) / dstH))
+    const ey = Math.min(sy1, srcH)
     for (let tx = 0; tx < dstW; tx++) {
-      const sx = ((tx + 0.5) * image.width) / dstW - 0.5
-      const [r, g, b] = sampleBilinear(image, sx, sy)
-      const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+      const sx0 = Math.floor((tx * srcW) / dstW)
+      const sx1 = Math.max(sx0 + 1, Math.ceil(((tx + 1) * srcW) / dstW))
+      const ex = Math.min(sx1, srcW)
+      let sum = 0
+      let n = 0
+      for (let y = sy0; y < ey; y++) {
+        for (let x = sx0; x < ex; x++) {
+          const i = (y * srcW + x) * 4
+          sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+          n++
+        }
+      }
+      const luma = n ? sum / n / 255 : 0
       out[ty * dstW + tx] = (luma - mean) / std
     }
   }
