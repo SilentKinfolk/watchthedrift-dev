@@ -21,6 +21,17 @@ This is the spine every v2 slice builds on (camera → `Recognizer` engine → `
 `Drift` → UI), plus the headless Node OCR harness for measuring the decoder against
 labelled images.
 
+**v2 recognition so far:** the **geometry win** — a learned LCD-corner detector
+(`corner-v1`, a ~144 KB int8 tiny-CNN trained by the pure-numpy trainer in
+[`tools/train/`](tools/train/), run through the bespoke TS kernel) → homography →
+frontal crop → the v1 decoder, combined **precision-first** so it can only add
+read-success on angled/off-centre shots, never regress. The corner stage is scored in
+isolation and the v1 decoder's confidence is **calibrated** with an abstain threshold
+(`npm run harness`). The detector is trained on a thin one-watch corpus, so its
+accuracy on the harder eval-gold strata is **data-limited** — corners good on
+clean/front-on views, weaker on distant/inverted ones — a known limit routed to the
+v2.1 hard-stratum issue (#21); it abstains rather than guessing where it can't.
+
 ## Direction (read these first)
 
 - **[`SPEC.md`](SPEC.md)** — the directional north star for v2.
@@ -42,7 +53,7 @@ npm run dev        # http://localhost:5173 (a secure context, so the camera work
 npm test           # unit tests (Vitest): drift, time-sync, parser, eval metric + label schema
 npm run build      # type-check (tsc) + production build to dist/
 npm run size       # first-load byte-budget gate (run after build; needs dist/)
-npm run harness    # score the decoder over tools/fixtures + tools/local (precision-first metric + gate), write overlays
+npm run harness    # decoder precision-first gate + corner-stage isolation eval + calibration + angle-sweep demo, write overlays
 ```
 
 > The camera (`getUserMedia`) only works over HTTPS or on `localhost`. Test on a phone
@@ -72,10 +83,11 @@ and do the first reading): the entry `index.html`, the bundled app under
 `dist/assets/**` (JS/CSS + any chunks — the bespoke inference kernel lands here, no
 separate wasm runtime), and any model asset the app fetches at runtime declared in
 `EAGER_RUNTIME_ASSETS`. Issue #9 registers `models/**` there: the corner-detector
-model + manifest, which `KernelCornerSource` fetches before the first reading (~1.5
-MB today — a dummy placeholder until trained weights land in #11). Other
-lazy/passthrough files that aren't fetched at first load don't count, but are listed
-and **flagged if large**, so a forgotten eager asset can't silently slip the gate.
+model + manifest, which `KernelCornerSource` fetches before the first reading — the
+trained `corner-v1` int8 tiny-CNN (#11), ~144 KB, so first-load is ~180 KB (3.5% of
+budget). Other lazy/passthrough files that aren't fetched at first load don't count,
+but are listed and **flagged if large**, so a forgotten eager asset can't silently
+slip the gate.
 
 ### Precision-first eval gate (confidently-wrong ≤ ~0.5%)
 

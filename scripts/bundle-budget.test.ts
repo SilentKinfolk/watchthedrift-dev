@@ -14,8 +14,8 @@ describe('isFirstLoad', () => {
 
   it('counts the corner model + manifest under models/ (eager by default, issue #9)', () => {
     // KernelCornerSource fetches both before the first reading, so they count.
-    expect(isFirstLoad('models/corner-dummy-v1.bin')).toBe(true)
-    expect(isFirstLoad('models/corner-dummy-v1.json')).toBe(true)
+    expect(isFirstLoad('models/corner-v1.bin')).toBe(true)
+    expect(isFirstLoad('models/corner-v1.json')).toBe(true)
   })
 
   it('excludes other public/ passthrough not under models/', () => {
@@ -42,22 +42,23 @@ describe('globToRegExp', () => {
 })
 
 describe('computeBudget', () => {
-  // The current-shape bundle (issue #9): the app + the ~1.5 MB corner model asset.
+  // The current-shape bundle (issue #11): the app + the trained ~144 KB corner model
+  // asset (the int8 corner-v1 weights, far under the per-model allowance).
   const currentBundle = [
     { rel: 'index.html', bytes: 2105 },
     { rel: 'assets/index-CPWZAPQQ.js', bytes: 29815 },
     { rel: 'assets/index-KN4EMpIF.css', bytes: 3093 },
-    { rel: 'models/corner-dummy-v1.bin', bytes: 1_572_848 },
-    { rel: 'models/corner-dummy-v1.json', bytes: 3098 },
+    { rel: 'models/corner-v1.bin', bytes: 147_272 },
+    { rel: 'models/corner-v1.json', bytes: 3313 },
   ]
 
   it('counts the app + the eager model, and passes within budget', () => {
     const r = computeBudget(currentBundle)
-    expect(r.firstLoadTotal).toBe(2105 + 29815 + 3093 + 1_572_848 + 3098)
+    expect(r.firstLoadTotal).toBe(2105 + 29815 + 3093 + 147_272 + 3313)
     expect(r.budgetBytes).toBe(BUDGET_BYTES)
     expect(r.withinBudget).toBe(true)
     expect(r.over).toBeLessThan(0)
-    expect(r.firstLoad.map((f) => f.rel)).toContain('models/corner-dummy-v1.bin')
+    expect(r.firstLoad.map((f) => f.rel)).toContain('models/corner-v1.bin')
     expect(r.uncounted).toHaveLength(0)
   })
 

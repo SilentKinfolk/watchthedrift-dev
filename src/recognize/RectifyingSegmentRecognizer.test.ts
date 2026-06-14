@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rectifyThenDecode } from './RectifyingSegmentRecognizer'
+import { rectifyThenDecode, preferRectified } from './RectifyingSegmentRecognizer'
 import { decodeSegments } from './segments'
 import { rectifiedSize, type Quad } from './rectify'
 
@@ -51,5 +51,26 @@ describe('rectifyThenDecode', () => {
     const { result, rectified } = rectifyThenDecode(data, W, H, collinear)
     expect(rectified).toBeNull()
     expect(result.debug.note).toBe(direct.debug.note)
+  })
+})
+
+describe('preferRectified — precision-first combine of raw vs rectified', () => {
+  const t = (hh: number, mm: number, ss: number) => ({ hh, mm, ss })
+
+  it('recovers: rectified reads where raw was silent → prefer rectified', () => {
+    expect(preferRectified(null, t(10, 42, 15))).toBe(true)
+  })
+
+  it('confirms: both read and agree → prefer rectified (the frontal crop)', () => {
+    expect(preferRectified(t(10, 42, 15), t(10, 42, 15))).toBe(true)
+  })
+
+  it('clash: both read but disagree → defer to the validated raw baseline', () => {
+    expect(preferRectified(t(10, 42, 15), t(10, 42, 16))).toBe(false)
+  })
+
+  it('rectified silent → keep raw, regardless of raw', () => {
+    expect(preferRectified(t(10, 42, 15), null)).toBe(false)
+    expect(preferRectified(null, null)).toBe(false)
   })
 })
