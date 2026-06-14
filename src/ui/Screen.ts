@@ -1,7 +1,8 @@
 import { Camera, type CameraError } from '../camera/Camera'
 import { TimeSync } from '../time/TimeSync'
 import { RectifyingSegmentRecognizer } from '../recognize/RectifyingSegmentRecognizer'
-import { manualCornerSource } from '../recognize/corners'
+import { manualCornerSource, firstAvailable } from '../recognize/corners'
+import { kernelCornerSource, fetchKernelModel } from '../recognize/KernelCornerSource'
 import { drawDecodeOverlay } from '../recognize/overlay'
 import { preprocess } from '../recognize/preprocess'
 import { TIME_CROP, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
@@ -30,11 +31,18 @@ export class Screen {
   // crop. Cropping tight keeps binarisation clean — feeding the whole frame let a
   // bright background skew the threshold and read an off-angle face as all-black.
   //
-  // The decoder now sits behind the rectification stage (#4): given the LCD's four
-  // corners it reads a frontal, straightened crop. The corner source is a throwaway
-  // stub for now (manual `?corners=` override) and returns null otherwise, so with
-  // no override this is identical to feeding the raw crop straight to v1.
-  private readonly recognizer = new RectifyingSegmentRecognizer(manualCornerSource())
+  // The decoder sits behind the rectification stage (#4): given the LCD's four
+  // corners it reads a frontal, straightened crop. The corners come from the learned
+  // KernelCornerSource (#9), loaded lazily in recognizer.init(); a `?corners=` debug
+  // override sits in front of it. The model shipped today is a DUMMY (it abstains —
+  // see KernelCornerSource), so until the trained weights land (#11) the detector
+  // returns null and this is identical to feeding the raw crop straight to v1.
+  private readonly recognizer = new RectifyingSegmentRecognizer(
+    firstAvailable(
+      manualCornerSource(),
+      kernelCornerSource(() => fetchKernelModel(import.meta.env.BASE_URL ?? '/', 'corner-dummy-v1')),
+    ),
+  )
   private readonly debug = isDebug()
 
   private state: State = 'idle'
