@@ -25,8 +25,8 @@ tools/training/
 
 # Corner-trainer scratch (issue #11): the numpy<->TS parity fixture and the
 # auto-derived training-corner manifest. Only the trainer code + the numpy kernel +
-# the trained weights (public/models/) ship; these are regenerable dev artifacts
-# derived from gitignored source photos.
+# the trained weights (src/models/, a Vite ?url build asset) ship; these are
+# regenerable dev artifacts derived from gitignored source photos.
 tools/train/parity-fixture.json
 tools/train/corners-train.json
 

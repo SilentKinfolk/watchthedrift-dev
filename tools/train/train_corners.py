@@ -7,7 +7,7 @@ hand-written backprop over exactly the kernel's op set. Run:
 
     npm run prep:corners            # writes tools/train/corners-train.json
     python3 tools/train/train_corners.py
-                                    # → public/models/corner-v1.{bin,json}
+                                    # → src/models/corner-v1.{bin,json}
 
 The forward ops + int8 quant + blob format are shared with cnn_numpy.py (the parity
 mirror of the TS kernel), so what trains here runs identically in the browser; the
@@ -467,7 +467,8 @@ def main() -> None:
 def export(params: dict, bases: list[dict], errs: dict, secs: float) -> None:
     """Quantise to int8, build the manifest (matching blob.ts layer types), compute
     the referenceVector via the shared cnn_numpy forward on the DEQUANTISED weights
-    (exactly what the TS kernel runs), and write public/models/corner-v1.{bin,json}."""
+    (exactly what the TS kernel runs), and write src/models/corner-v1.{bin,json}
+    (a Vite `?url` build asset — hashed at build, precached by the service worker)."""
     pack = []
 
     # Pack in layer order: conv(w int8, b f32) ×4, dense0(w int8, b f32), dense1(w int8, b f32)
@@ -520,7 +521,7 @@ def export(params: dict, bases: list[dict], errs: dict, secs: float) -> None:
     ref_out = forward_infer(manifest["layers"], tensors, ramp)
     manifest["referenceVector"]["output"] = [float(v) for v in ref_out]
 
-    out_dir = os.path.join(ROOT, "public", "models")
+    out_dir = os.path.join(ROOT, "src", "models")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "corner-v1.bin"), "wb") as f:
         f.write(blob)
@@ -541,7 +542,7 @@ def export(params: dict, bases: list[dict], errs: dict, secs: float) -> None:
     with open(os.path.join(HERE, "train-report.json"), "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")
-    print(f"\nwrote public/models/corner-v1.{{bin,json}}  ({len(blob)} B)  in {secs:.0f}s")
+    print(f"\nwrote src/models/corner-v1.{{bin,json}}  ({len(blob)} B)  in {secs:.0f}s")
     print(f"  reference output: [{', '.join(f'{v:.4f}' for v in ref_out)}]")
     if em:
         print(f"  easy+moderate mean corner-error: {np.mean(em):.4f}")

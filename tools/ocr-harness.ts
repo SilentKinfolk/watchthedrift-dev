@@ -281,7 +281,7 @@ async function main(): Promise<void> {
 
 // ── Corner detector helpers (issue #11) ─────────────────────────────────────────
 
-const MODELS_DIR = join(HERE, '..', 'public', 'models')
+const MODELS_DIR = join(HERE, '..', 'src', 'models')
 
 /** Load the committed trained corner asset, or null if absent. */
 function loadCornerModel(): LoadedModel | null {
@@ -314,7 +314,7 @@ function predictCorners(model: LoadedModel, frame: RawImage): { norm: Corners; p
 async function reportCornerErrors(files: string[], model: LoadedModel | null): Promise<void> {
   console.log('\n=== CORNER-STAGE ISOLATION — predicted vs eval-gold corners (issue #11) ===')
   if (!model) {
-    console.log('  (no corner-v1 model in public/models — skipped)')
+    console.log('  (no corner-v1 model in src/models — skipped)')
     return
   }
   console.log('  metric = mean per-corner displacement / LCD diagonal (lower is better)')

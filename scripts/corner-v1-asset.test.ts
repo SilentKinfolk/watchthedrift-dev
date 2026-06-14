@@ -11,7 +11,7 @@ import { runReference } from '../src/ml/model'
 // trainer wrote referenceVector.output from its own forward on the dequantised int8
 // weights; this asserts the TS kernel reproduces it, so the weights compute the same
 // thing in the browser as they did in training.
-const DIR = join(process.cwd(), 'public', 'models')
+const DIR = join(process.cwd(), 'src', 'models')
 const manifest = JSON.parse(readFileSync(join(DIR, 'corner-v1.json'), 'utf8')) as Manifest
 const blob = new Uint8Array(readFileSync(join(DIR, 'corner-v1.bin')))
 

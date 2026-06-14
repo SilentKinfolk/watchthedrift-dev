@@ -3,6 +3,13 @@ import { TimeSync } from '../time/TimeSync'
 import { RectifyingSegmentRecognizer } from '../recognize/RectifyingSegmentRecognizer'
 import { manualCornerSource, firstAvailable } from '../recognize/corners'
 import { kernelCornerSource, fetchKernelModel } from '../recognize/KernelCornerSource'
+// The learned corner model, imported through Vite's module graph (`?url`) so it ships
+// as a build-hashed, same-origin asset under assets/ — cache-busted by content (atomic
+// app+model versioning, PLAN Infra) and precached by the service worker by its exact
+// hashed name. These imports live in Screen (not KernelCornerSource), which the
+// strip-types Node harness imports and so must stay free of `?url` specifiers.
+import cornerManifestUrl from '../models/corner-v1.json?url'
+import cornerBlobUrl from '../models/corner-v1.bin?url'
 import { drawDecodeOverlay } from '../recognize/overlay'
 import { preprocess } from '../recognize/preprocess'
 import { FULL_FRAME, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
@@ -38,7 +45,7 @@ export class Screen {
   private readonly recognizer = new RectifyingSegmentRecognizer(
     firstAvailable(
       manualCornerSource(),
-      kernelCornerSource(() => fetchKernelModel(import.meta.env.BASE_URL ?? '/', 'corner-v1')),
+      kernelCornerSource(() => fetchKernelModel(cornerManifestUrl, cornerBlobUrl)),
     ),
   )
   private readonly debug = isDebug()
