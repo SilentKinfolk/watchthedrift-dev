@@ -14,10 +14,15 @@ mirror of the TS kernel), so what trains here runs identically in the browser; t
 manifest's referenceVector (computed here) is asserted by the TS asset test.
 
 Data reality (PLAN top-risks #2/#3/#5): the corner-labelled bases are few and show
-one watch front-on, so AUGMENTATION carries generalisation — perspective warps move
-/scale/skew the LCD across the frame (the angle/off-centre geometry the detector
-must win), corners following each warp; photometric jitter breaks pixel-value
-memorisation. Eval stays the held-out real eval-gold (measured by the harness).
+one watch front-on, so AUGMENTATION carries generalisation. Geometry — perspective
+warps + in-plane tilt move/scale/skew the LCD across the frame (the angle/off-centre
+geometry the detector must win), corners following each warp. Photometric — instead
+of mild jitter we synthesise the actual hard conditions the held-out eval is graded
+on: low light (reflective LCD, no backlight), specular glare/reflection streaks,
+defocus + motion blur, uneven lighting, vignette, JPEG + sensor noise. This is the
+cheap, auto-labelled substitute for the real hard photos we don't yet have (#21):
+unlimited hard variants whose corners are exact, vs. scraped clean shots that are
+all easy-stratum and need hand-labelling. Eval stays the held-out real eval-gold.
 Reproducible: seed + config (tools/train/config.json) + this code pin the run.
 """
 
@@ -27,6 +32,7 @@ import json
 import os
 import sys
 import time
+from io import BytesIO
 
 import numpy as np
 from PIL import Image
@@ -58,6 +64,12 @@ BASE_RES = CFG["baseRes"]          # working res for a base before warping
 ARCH = CFG["arch"]                 # conv out-channels + dense hidden
 
 rng = np.random.default_rng(SEED)
+
+# Precomputed coordinate grids — augmentation touches these every sample, so allocating
+# np.mgrid per call dominated runtime (≈10× slower). out_hw is always INPUT_HW.
+_GYf, _GXf = (g.astype(np.float64) for g in np.mgrid[0:INPUT_HW, 0:INPUT_HW])  # pixel
+_GYn, _GXn = _GYf / INPUT_HW, _GXf / INPUT_HW                                  # normalised
+_OUT_PTS = np.stack([_GXf.ravel() + 0.5, _GYf.ravel() + 0.5], axis=1)          # warp sample grid
 
 # ── data: bases + online augmentation ────────────────────────────────────────────
 
@@ -106,7 +118,7 @@ def random_background(out_hw: int, r: np.random.Generator) -> np.ndarray:
     flat fill the net learns 'bright/flat = background'; a structured, varied surround
     forces it to localise the LCD by its OWN structure (bright field + dark digit
     strokes) rather than by what surrounds it."""
-    yy, xx = np.mgrid[0:out_hw, 0:out_hw].astype(np.float64) / out_hw
+    yy, xx = _GYn, _GXn
     base = r.uniform(40, 210)
     gx, gy = r.uniform(-80, 80), r.uniform(-80, 80)
     bg = base + gx * xx + gy * yy
@@ -129,8 +141,7 @@ def warp_to(img: np.ndarray, dst_quad: np.ndarray, out_hw: int, bg: np.ndarray) 
     back = solve_homography(dst_quad, src)
     if forward is None or back is None:
         return None, None
-    ys, xs = np.mgrid[0:out_hw, 0:out_hw]
-    out_pts = np.stack([xs.ravel() + 0.5, ys.ravel() + 0.5], axis=1)
+    out_pts = _OUT_PTS
     s = apply_h(back, out_pts)
     sx, sy = s[:, 0], s[:, 1]
     inside = (sx >= 0) & (sx < w) & (sy >= 0) & (sy < h)
@@ -148,6 +159,37 @@ def warp_to(img: np.ndarray, dst_quad: np.ndarray, out_hw: int, bg: np.ndarray) 
     return out, forward
 
 
+def _box1d(a: np.ndarray, radius: int, axis: int) -> np.ndarray:
+    """Edge-padded moving average along `axis` via cumsum — O(N), fully vectorised."""
+    w = 2 * radius + 1
+    a = np.swapaxes(a, axis, -1)
+    ap = np.pad(a, [(0, 0)] * (a.ndim - 1) + [(radius, radius)], mode="edge")
+    c = np.cumsum(ap, axis=-1)
+    c = np.concatenate([np.zeros(c.shape[:-1] + (1,)), c], axis=-1)
+    return np.swapaxes((c[..., w:] - c[..., :-w]) / w, axis, -1)
+
+
+def _sep_blur(img: np.ndarray, sigma: float) -> np.ndarray:
+    """Defocus blur — two separable box passes ≈ Gaussian, cheap (no scipy). Real
+    live-scan frames are rarely tack-sharp."""
+    radius = max(1, int(round(sigma)))
+    out = img
+    for _ in range(2):
+        out = _box1d(_box1d(out, radius, 1), radius, 0)
+    return out
+
+
+def _motion_blur(img: np.ndarray, angle: float, length: int) -> np.ndarray:
+    """Directional averaging — the smear of a hand-held phone during a live scan."""
+    n = max(2, int(length))
+    dx, dy = float(np.cos(angle)), float(np.sin(angle))
+    acc = np.zeros_like(img)
+    for t in range(n):
+        s = t - (n - 1) / 2.0
+        acc += np.roll(np.roll(img, int(round(dy * s)), axis=0), int(round(dx * s)), axis=1)
+    return acc / n
+
+
 def augment(base: dict, r: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
     """One random (image, corners) variant: perspective warp (geometry) + photometric.
     Returns (128² grayscale float64 in [0,255], corners (4,2) normalised)."""
@@ -158,6 +200,10 @@ def augment(base: dict, r: np.random.Generator) -> tuple[np.ndarray, np.ndarray]
     # then jitter each corner (keystone/skew) — moves the LCD across the frame. Wide
     # scale range so the watch ranges from filling the frame to small-and-distant
     # (the eval set's full-length shot is a tiny LCD in a tall frame).
+    # NOTE: an aspect-ratio jitter (independent w/h, to model the full-length 1:4
+    # squash) was tried here and REGRESSED every stratum (fulllength 0.266→0.285,
+    # easy 0.058→0.079) — reverted. The full-length miss is a real data gap, not an
+    # augmentation gap: it needs real off-square captures (#21), not more synthesis.
     scale = r.uniform(0.28, 1.0)
     span = out_hw * scale
     max_off = out_hw - span
@@ -165,7 +211,13 @@ def augment(base: dict, r: np.random.Generator) -> tuple[np.ndarray, np.ndarray]
     oy = r.uniform(0, max_off)
     base_quad = np.array([[ox, oy], [ox + span, oy], [ox + span, oy + span], [ox, oy + span]], dtype=np.float64)
     jit = CFG["jitter"] * out_hw
-    dst = base_quad + r.uniform(-jit, jit, size=(4, 2))
+    jscale = 1.0 if r.uniform() < 0.78 else r.uniform(1.3, 1.8)     # 22%: harder keystone/angle
+    dst = base_quad + r.uniform(-jit * jscale, jit * jscale, size=(4, 2))
+    if r.uniform() < 0.5:                                           # in-plane tilt — watches sit askew
+        ang = r.uniform(-1, 1) * (0.30 if r.uniform() < 0.25 else 0.13)  # ≤~17°, occasional more
+        c = dst.mean(axis=0)
+        ca, sa = np.cos(ang), np.sin(ang)
+        dst = (dst - c) @ np.array([[ca, -sa], [sa, ca]]).T + c
     out, forward = warp_to(img, dst, out_hw, random_background(out_hw, r))
     if out is None:
         # degenerate draw → identity fallback (squash base to 128)
@@ -177,17 +229,63 @@ def augment(base: dict, r: np.random.Generator) -> tuple[np.ndarray, np.ndarray]
         opx = apply_h(forward, cpx)
         corners = opx / out_hw
 
-    # photometric: brightness/contrast, gamma, glare, noise
-    out = out * r.uniform(0.65, 1.3) + r.uniform(-30, 30)           # contrast+brightness
-    g = r.uniform(0.6, 1.7)
-    out = 255.0 * np.clip(out / 255.0, 0, 1) ** g                   # gamma
-    if r.uniform() < 0.4:                                           # glare blob
-        cx, cy = r.uniform(0, out_hw, 2)
-        yy, xx = np.mgrid[0:out_hw, 0:out_hw]
-        rad = r.uniform(0.12, 0.3) * out_hw
-        out = out + r.uniform(80, 200) * np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * rad * rad))
-    out = out + r.normal(0, r.uniform(0, 10), size=out.shape)       # sensor noise
-    if r.uniform() < 0.5:                                           # inverted-display robustness
+    # ── photometric: model the REAL hard conditions the held-out eval is graded on —
+    #    reflective LCD → glare & low light; hand-held live scan → blur; phone ISP →
+    #    JPEG + sensor noise. Each effect is probabilistic AND deliberately gentle: a
+    #    first pass with heavy rates (50% inversion, stacked low-light/blur/glare) held
+    #    overall error flat but TRADED clean-shot precision for worst-case robustness,
+    #    so rates/extremes are dialled back here to keep most samples near-clean — the
+    #    net must still nail the easy stratum while gaining the invariance one watch
+    #    front-on can't teach.
+
+    # uneven scene illumination: a smooth multiplicative gradient (side lighting)
+    if r.uniform() < 0.28:
+        yy, xx = _GYn, _GXn
+        d = r.uniform(0, 2 * np.pi)
+        ramp = np.cos(d) * xx + np.sin(d) * yy
+        out = out * (1.0 + r.uniform(0.2, 0.5) * (ramp - 0.5))
+
+    # exposure: a dedicated low-light path (reflective LCD, no backlight) vs normal
+    if r.uniform() < 0.18:
+        out = out * r.uniform(0.28, 0.5) + r.uniform(-10, 10)      # crush to dim
+        out = (out - 128.0) * r.uniform(0.62, 0.9) + 128.0         # and low-contrast
+    else:
+        out = out * r.uniform(0.72, 1.3) + r.uniform(-25, 25)      # contrast + brightness
+    out = np.clip(out, 0, 255)
+    out = 255.0 * (out / 255.0) ** r.uniform(0.62, 1.6)            # gamma
+
+    # specular glare on the glass: 1–2 soft blobs and/or an elongated reflection bar
+    if r.uniform() < 0.42:
+        yy, xx = _GYf, _GXf
+        for _ in range(int(r.integers(1, 3))):
+            cx, cy = r.uniform(0, out_hw, 2)
+            rad = r.uniform(0.1, 0.32) * out_hw
+            out = out + r.uniform(60, 165) * np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * rad * rad))
+        if r.uniform() < 0.33:                                      # reflection streak
+            a = r.uniform(0, np.pi)
+            u = (xx - out_hw / 2) * np.cos(a) + (yy - out_hw / 2) * np.sin(a)
+            out = out + r.uniform(50, 130) * np.exp(-(u ** 2) / (2 * r.uniform(2, 6) ** 2))
+
+    # optics: defocus and/or motion blur
+    if r.uniform() < 0.25:
+        out = (_sep_blur(out, r.uniform(0.5, 1.3)) if r.uniform() < 0.5
+               else _motion_blur(out, r.uniform(0, np.pi), int(r.integers(3, 6))))
+
+    # lens vignette: radial darkening toward the corners
+    if r.uniform() < 0.2:
+        out = out * (1.0 - r.uniform(0.3, 0.7) * ((_GXn - 0.5) ** 2 + (_GYn - 0.5) ** 2))
+
+    out = np.clip(out, 0, 255)
+
+    # phone codec: a JPEG round-trip injects the blocking/ringing real captures carry
+    if r.uniform() < 0.22:
+        buf = BytesIO()
+        Image.fromarray(out.astype(np.uint8)).save(buf, format="JPEG", quality=int(r.integers(30, 80)))
+        buf.seek(0)
+        out = np.asarray(Image.open(buf).convert("L"), dtype=np.float64)
+
+    out = out + r.normal(0, r.uniform(0, 9), size=out.shape)        # sensor noise
+    if r.uniform() < 0.25:                                          # inverted-display robustness
         out = 255.0 - out
     return np.clip(out, 0, 255), corners
 
