@@ -6,6 +6,14 @@
     <meta name="theme-color" content="#ffffff" />
     <meta name="description" content="See how many seconds your Casio F-91W is off from real (NTP) time, right now — by pointing your camera at it." />
     <title>watchthedrift</title>
+    <!-- PWA: installable, offline reading (service worker caches app + model). Relative
+         hrefs resolve against the document, so they stay correct under the Pages base. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="watchthedrift" />
   </head>
   <body>
     <main class="hero" id="app">
