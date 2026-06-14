@@ -14,7 +14,7 @@ import { drawDecodeOverlay } from '../recognize/overlay'
 import { preprocess } from '../recognize/preprocess'
 import { FULL_FRAME, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
 import { measureExposure, legibility } from '../recognize/exposure'
-import { computeDrift, type DriftResult } from '../drift/Drift'
+import { computeDrift, isImplausibleDrift, type DriftResult } from '../drift/Drift'
 import { isDebug, renderDebug } from './DebugView'
 import { applyResult } from './format'
 import { feedbackFor, feedbackMessage } from './feedback'
@@ -293,6 +293,14 @@ export class Screen {
       new Date().getTimezoneOffset(),
       this.is24h,
     )
+    // Guard a misread: this watch is only ever seconds off, so a drift of minutes or
+    // hours is a decode error (a dropped/garbled digit), not a measurement. Discard it
+    // and keep scanning — never lock a wrong number. The agreement lock below can't
+    // catch this alone: a *consistent* misread corroborates itself.
+    if (isImplausibleDrift(drift.offsetSec)) {
+      this.setSub(feedbackMessage('implausible'))
+      return
+    }
     const at = cap.perfTimestamp
     // Lock when an earlier read (≥ SCAN_MIN_PAIR_MS ago) agrees on the drift — an
     // honest watch ticks in step with real time, so two true reads match; a random

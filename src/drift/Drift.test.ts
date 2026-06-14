@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeDrift, type WatchReading } from './Drift'
+import { computeDrift, isImplausibleDrift, MAX_PLAUSIBLE_DRIFT_SEC, type WatchReading } from './Drift'
 
 // True UTC instant on a fixed date; tests use tzOffset 0 unless noted, so local
 // time-of-day equals this UTC time-of-day.
@@ -65,5 +65,32 @@ describe('computeDrift', () => {
   it('folds time-source uncertainty into the band', () => {
     const r = computeDrift(watch(10, 42, 15), T(10, 42, 9, 300), 120, 0, true)
     expect(r.uncertaintySec).toBeCloseTo(0.5 + 0.12, 6)
+  })
+})
+
+describe('isImplausibleDrift (misread guard)', () => {
+  it('accepts real, seconds-scale drift', () => {
+    expect(isImplausibleDrift(0)).toBe(false)
+    expect(isImplausibleDrift(50)).toBe(false)
+    expect(isImplausibleDrift(-59)).toBe(false)
+  })
+
+  it('rejects minute/hour-scale drift a misread digit produces', () => {
+    expect(isImplausibleDrift(61)).toBe(true)
+    expect(isImplausibleDrift(-1800)).toBe(true)
+    expect(isImplausibleDrift(-3000)).toBe(true) // the reported "3000 s off" symptom
+  })
+
+  it('catches a consistent misread the agreement lock cannot — via computeDrift', () => {
+    // Watch truly ~10:42:09; a garbled minutes digit reads 10:12:09 → ~ −30 min. Two
+    // such frames would "agree" and lock, but the magnitude gives it away.
+    const r = computeDrift(watch(10, 12, 9), T(10, 42, 9, 500), 0, 0, true)
+    expect(Math.abs(r.offsetSec)).toBeGreaterThan(MAX_PLAUSIBLE_DRIFT_SEC)
+    expect(isImplausibleDrift(r.offsetSec)).toBe(true)
+  })
+
+  it('honours a custom bound', () => {
+    expect(isImplausibleDrift(45, 30)).toBe(true)
+    expect(isImplausibleDrift(45, 60)).toBe(false)
   })
 })

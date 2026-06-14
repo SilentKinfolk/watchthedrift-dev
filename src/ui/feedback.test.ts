@@ -22,7 +22,7 @@ describe('feedbackFor', () => {
 })
 
 describe('feedbackMessage', () => {
-  const states: Feedback[] = ['too-dark', 'glare', 'found', 'searching']
+  const states: Feedback[] = ['too-dark', 'glare', 'found', 'searching', 'implausible']
 
   it('has a non-empty line for every state', () => {
     for (const s of states) expect(feedbackMessage(s).length).toBeGreaterThan(0)
@@ -34,5 +34,11 @@ describe('feedbackMessage', () => {
 
   it('names glare so the user knows what to fix', () => {
     expect(feedbackMessage('glare').toLowerCase()).toContain('glare')
+  })
+
+  it('signals a rejected misread without ever implying a number', () => {
+    const m = feedbackMessage('implausible')
+    expect(m.length).toBeGreaterThan(0)
+    expect(m).not.toMatch(/\d/) // never shows a value for a read we threw away
   })
 })
