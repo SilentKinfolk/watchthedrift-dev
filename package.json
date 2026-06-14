@@ -16,7 +16,8 @@
     "harvest": "node --experimental-strip-types tools/harvest.ts",
     "augment": "node --experimental-strip-types tools/augment.ts",
     "annotate": "node --experimental-strip-types tools/annotate.ts",
-    "gen:dummy": "node --experimental-strip-types tools/gen-dummy-model.ts"
+    "gen:dummy": "node --experimental-strip-types tools/gen-dummy-model.ts",
+    "gen:parity": "node --experimental-strip-types tools/train/gen_parity_fixture.ts"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",
