@@ -31,6 +31,15 @@ const SECONDS_PER_DAY = 86_400
 /** A whole-second display is known only to ±0.5 s. */
 export const QUANTISATION_SEC = 0.5
 
+/** A real watch is only ever seconds off; a misread digit (a dropped or garbled
+ *  segment) throws the computed drift to minutes or hours. Above this magnitude we
+ *  treat a reading as a decode error, not a measurement — failing to a retake rather
+ *  than showing a wrong number (the honesty invariant). This is INDEPENDENT of the
+ *  live-scan agreement lock: a *consistent* misread corroborates itself, so the lock
+ *  alone can't catch it, but this magnitude bound can. Tuned to this watch (±60 s);
+ *  raise it for a watch that can legitimately drift further. */
+export const MAX_PLAUSIBLE_DRIFT_SEC = 60
+
 /** Positive remainder: result is always in [0, m). */
 function mod(n: number, m: number): number {
   return ((n % m) + m) % m
@@ -66,4 +75,11 @@ export function computeDrift(
   const direction: Direction = shown > 0 ? 'fast' : shown < 0 ? 'slow' : 'exact'
 
   return { offsetSec, uncertaintySec, direction }
+}
+
+/** True when a drift is too large to be a real reading for this watch — i.e. almost
+ *  certainly a misread, to be discarded rather than shown. Compares the magnitude of
+ *  the signed estimate against `maxSec` (default MAX_PLAUSIBLE_DRIFT_SEC). */
+export function isImplausibleDrift(offsetSec: number, maxSec = MAX_PLAUSIBLE_DRIFT_SEC): boolean {
+  return Math.abs(offsetSec) > maxSec
 }

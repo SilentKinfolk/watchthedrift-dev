@@ -5,7 +5,7 @@
 
 import type { Legibility } from '../recognize/exposure'
 
-export type Feedback = 'too-dark' | 'glare' | 'found' | 'searching'
+export type Feedback = 'too-dark' | 'glare' | 'found' | 'searching' | 'implausible'
 
 export interface ScanSignal {
   /** Scene legibility from the frame's exposure. */
@@ -34,6 +34,9 @@ const MESSAGES: Record<Feedback, string> = {
   glare: 'Bright reflection on the face — tilt the watch to cut the glare.',
   found: 'Got the time — hold steady…',
   searching: 'Point at your watch and hold steady — it locks on its own.',
+  // Set directly by the scan loop (post-drift), not by feedbackFor: the read parsed,
+  // but the resulting drift was too large to be real — a likely misread digit.
+  implausible: 'That reading didn’t look right — hold steady to re-read.',
 }
 
 export function feedbackMessage(f: Feedback): string {
