@@ -41,5 +41,9 @@ tools/fixtures/*.webp
 # A stray root-level traineddata copy (the shipped one lives in public/traineddata/)
 /digits.traineddata
 
+# Python bytecode (the numpy corner trainer)
+__pycache__/
+*.pyc
+
 # OS
 .DS_Store

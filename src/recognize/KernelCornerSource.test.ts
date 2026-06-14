@@ -145,9 +145,13 @@ describe('kernelCornerSource', () => {
 
 // ── End-to-end behind RectifyingSegmentRecognizer (the seam the stub had) ────────
 // A minimal fake canvas is enough: the recognizer reads width/height + getImageData.
-// We assert via the `raw` debug string whether the rectify path ran ('rectified')
-// or the source abstained to the raw crop ('raw') — proving the kernel corners
-// actually drive the recognizer, in node, with no real model.
+// We assert via the `raw` debug string whether rectification RAN (the source is
+// 'rectified' when the frontal read is taken, or 'raw-preferred' when corners were
+// processed but the read deferred to the raw baseline — both mean a frontal crop was
+// produced from the kernel corners) versus the detector ABSTAINING to the raw crop
+// ('raw', no corners) — proving the kernel corners actually drive the recognizer, in
+// node, with no real model. (On a blank frame neither path yields a reading, so the
+// precision-first combine defers to 'raw-preferred'.)
 function fakeCanvas(image: RawImage): HTMLCanvasElement {
   return {
     width: image.width,
@@ -162,7 +166,10 @@ describe('RectifyingSegmentRecognizer + kernelCornerSource', () => {
     await rec.init() // awaits the corner source's model load
     const out = await rec.recognize({ canvas: fakeCanvas(grayFrame(80, 40)), is24h: true })
     expect(out.ok).toBe(false) // a blank frame has no digits…
-    if (!out.ok) expect(out.raw ?? '').toContain('rectified') // …but it went through the rectify path
+    // …but it went through the rectify path: corners were plausible, so a frontal crop
+    // was produced (source 'raw-preferred' since neither crop reads on a blank frame),
+    // never the no-corners 'raw' abstain.
+    if (!out.ok) expect(out.raw ?? '').toContain('raw-preferred')
   })
 
   it('falls back to the raw crop when the detector abstains (dummy)', async () => {
