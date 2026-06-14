@@ -1,10 +1,11 @@
 import type { Recognizer, Recognized, RecognizeInput } from './Recognizer'
 
-// Runs recognisers in priority order and returns the first confident reading.
-// The F-91W segment decoder goes first (purpose-built, instant); Tesseract sits
-// behind it as a fallback. Each engine self-inits, so the heavy Tesseract wasm
-// only loads if a shot actually falls through to it. If every engine declines,
-// we surface the *primary's* verdict — its retake hint is the most relevant.
+// A generic priority cascade: runs recognisers in order and returns the first
+// confident reading. Each engine self-inits, so a heavier fallback only loads if a
+// shot actually falls through to it. If every engine declines, we surface the
+// *primary's* verdict — its retake hint is the most relevant. (v2 reads through a
+// single RectifyingSegmentRecognizer; with Tesseract dropped this cascade has no
+// engines wired today, but stays as a reusable primitive.)
 
 export class CascadeRecognizer implements Recognizer {
   readonly id: string

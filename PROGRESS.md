@@ -52,12 +52,13 @@ phones, move it to a Web Worker (the obvious next optimisation). A systematic
 per-watch misread (e.g. a stuck-faint segment biasing every frame the same way)
 can still slip the agree-twice check — that's the ML-reader's job, not this.
 
-Tesseract is **no longer wired in**: it can't read a full-frame capture (it OCRs
-the whole image, not the located display), and running it as a fallback would
-only add a wasm-load delay before an inevitable retake. `TesseractRecognizer` +
-`CascadeRecognizer` are kept in the tree for a *better* future fallback — running
-Tesseract on the decoder's **detected LCD crop** (`debug.lcd`). Dropping it from
-the bundle also cut it from ~38 kB to ~19 kB.
+Tesseract is **removed** (v2, issue #9) — the `tesseract.js` dependency, the
+`TesseractRecognizer`, and the `traineddata` are gone. It never earned its place:
+it can't read the rigid seven-segment font, and as a fallback only added a
+wasm-load delay before an inevitable retake. v2's on-device intelligence is the
+**bespoke tiny-CNN inference kernel** instead (PLAN decision #2 — a general
+runtime measured ~12.4 MB, ~2.5× the whole 5 MB budget). The generic
+`CascadeRecognizer` primitive stays, with no engines wired today.
 
 ## How to run
 ```sh
@@ -67,6 +68,8 @@ npm test         # Vitest (drift + time-sync + parser)
 npm run build    # typecheck + production build → dist/
 npm run harness  # run the segment decoder over tools/ images, save overlays to tools/out/
 npm run augment  # (v2) clean labelled photos → hard training variants in tools/training/
+npm run size     # (v2) first-load byte-budget gate (≤5 MB) over dist/
+npm run gen:dummy # (v2) regenerate the placeholder corner model in public/models/
 ```
 Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
 
@@ -79,16 +82,26 @@ Deploy: push to `main` → GitHub Actions builds and publishes to Pages.
   - `Recognizer.ts` — engine interface (swappable).
   - **`segments.ts` — the custom F-91W 7-segment decoder (the algorithm; primary).**
     Pure, shared with the harness; takes the raw crop and owns binarisation.
-  - **`SegmentDecoderRecognizer.ts` — wraps `segments.ts` as the primary `Recognizer`.**
-  - `CascadeRecognizer.ts` / `TesseractRecognizer.ts` — **currently unwired.** Kept
-    for a possible future fallback: run Tesseract on the decoder's *detected* LCD
-    crop (`debug.lcd`) when the segment read fails.
-  - `binarize.ts` — `toGray` + Otsu (shared by the decoder and `preprocess`).
+  - **`SegmentDecoderRecognizer.ts` — wraps `segments.ts` as a `Recognizer`.**
+  - **`RectifyingSegmentRecognizer.ts` — the app's v2 engine: learned corners →
+    homography → frontal crop → `segments.ts`. Abstains to the raw decode.**
+  - `corners.ts` / `KernelCornerSource.ts` — the `CornerSource` seam + the learned
+    detector that runs the bespoke kernel (`src/ml/`); ships a dummy that abstains
+    until trained weights land (#11).
+  - `rectify.ts` — the deterministic homography (corners → frontal crop).
+  - `CascadeRecognizer.ts` — a generic priority-cascade primitive, no engines wired
+    today (Tesseract dropped).
+  - `binarize.ts` — `toGray` + histogram + Otsu (shared by the decoder).
   - `overlay.ts` — shared decode-overlay renderer (harness PNGs + app `?debug=1`).
-  - `preprocess.ts` — crop + scale (down to ≤1600 px longest side) + binarise.
+  - `preprocess.ts` — crop + scale (down to ≤1600 px longest side); the decoder
+    owns binarisation.
   - `geometry.ts` — the alignment box (`TIME_CROP`): a small, tight box around the
     time row; the decoder reads + locally re-thresholds the LCD it finds within it.
-  - `parse.ts` — OCR-text → HH:MM:SS (Tesseract-path helper; idle while unwired).
+  - `parse.ts` — text → HH:MM:SS parser; idle in v2 (Tesseract removed), retained
+    for the deferred learned reader (#21).
+- `src/ml/` — the bespoke inference runtime (issue #9): `kernel.ts` (conv/relu/
+  pool/dense/softmax, pure typed-array ops), `blob.ts` (weights-blob contract +
+  loader), `model.ts` (forward runner + reference-vector parity).
 - `tools/ocr-harness.ts` — headless harness; reads `tools/fixtures/` + `tools/local/` (both gitignored images), decodes, scores vs filename labels, writes annotated overlays to `tools/out/`.
 - `.github/workflows/deploy.yml` — Pages deploy.
 

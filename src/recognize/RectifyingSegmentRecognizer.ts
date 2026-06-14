@@ -9,10 +9,11 @@ import type { CornerSource } from './corners.ts'
 //
 //     frame → corner source → rectify (homography) → v1 decoder → reading
 //
-// behind the existing `Recognizer` interface. The corner source is a throwaway
-// stub today (see ./corners); the learned detector (#9) drops in at the same seam.
-// When the source yields no corners we decode the raw crop unchanged, so the live
-// app is a no-op until corners are actually supplied.
+// behind the existing `Recognizer` interface. The corner source is pluggable (see
+// ./corners): a manual stub for the `?corners=` debug override, or the learned
+// `KernelCornerSource` (#9). When the source yields no corners — including when the
+// detector abstains on an implausible read — we decode the raw crop unchanged, so a
+// non-detection is always fail-safe (never worse than v1).
 
 /** Reject reads below this mean per-digit confidence → triggers a retake.
  *  Mirrors SegmentDecoderRecognizer (the same v1 decoder, just on a frontal crop). */
@@ -51,7 +52,9 @@ export class RectifyingSegmentRecognizer implements Recognizer {
     this.cornerSource = cornerSource
   }
 
-  async init(): Promise<void> {}
+  async init(): Promise<void> {
+    await this.cornerSource.init?.()
+  }
 
   async recognize(input: RecognizeInput): Promise<Recognized> {
     try {
@@ -60,7 +63,7 @@ export class RectifyingSegmentRecognizer implements Recognizer {
       const { width, height } = input.canvas
       const { data } = ctx.getImageData(0, 0, width, height)
 
-      const corners = this.cornerSource.corners(width, height)
+      const corners = this.cornerSource.corners({ data, width, height })
       const { result } = rectifyThenDecode(data, width, height, corners)
       const { reading, debug } = result
       this.lastDebug = debug

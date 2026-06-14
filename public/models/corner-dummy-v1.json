@@ -1,0 +1,171 @@
+{
+  "formatVersion": 1,
+  "architecture": "corner-dummy-cnn-v1",
+  "input": {
+    "channels": 1,
+    "height": 128,
+    "width": 128,
+    "mean": 0.5,
+    "std": 0.5
+  },
+  "layers": [
+    {
+      "type": "conv2d",
+      "inChannels": 1,
+      "outChannels": 8,
+      "kernelH": 3,
+      "kernelW": 3,
+      "strideH": 2,
+      "strideW": 2,
+      "padH": 1,
+      "padW": 1,
+      "weight": {
+        "offset": 0,
+        "length": 72,
+        "dtype": "int8",
+        "scale": 0.0015507825012282125,
+        "zeroPoint": 0
+      },
+      "bias": {
+        "offset": 72,
+        "length": 8,
+        "dtype": "float32"
+      }
+    },
+    {
+      "type": "relu"
+    },
+    {
+      "type": "conv2d",
+      "inChannels": 8,
+      "outChannels": 16,
+      "kernelH": 3,
+      "kernelW": 3,
+      "strideH": 2,
+      "strideW": 2,
+      "padH": 1,
+      "padW": 1,
+      "weight": {
+        "offset": 104,
+        "length": 1152,
+        "dtype": "int8",
+        "scale": 0.0015737265348434448,
+        "zeroPoint": 0
+      },
+      "bias": {
+        "offset": 1256,
+        "length": 16,
+        "dtype": "float32"
+      }
+    },
+    {
+      "type": "relu"
+    },
+    {
+      "type": "conv2d",
+      "inChannels": 16,
+      "outChannels": 32,
+      "kernelH": 3,
+      "kernelW": 3,
+      "strideH": 2,
+      "strideW": 2,
+      "padH": 1,
+      "padW": 1,
+      "weight": {
+        "offset": 1320,
+        "length": 4608,
+        "dtype": "int8",
+        "scale": 0.001573868623868687,
+        "zeroPoint": 0
+      },
+      "bias": {
+        "offset": 5928,
+        "length": 32,
+        "dtype": "float32"
+      }
+    },
+    {
+      "type": "relu"
+    },
+    {
+      "type": "conv2d",
+      "inChannels": 32,
+      "outChannels": 64,
+      "kernelH": 3,
+      "kernelW": 3,
+      "strideH": 2,
+      "strideW": 2,
+      "padH": 1,
+      "padW": 1,
+      "weight": {
+        "offset": 6056,
+        "length": 18432,
+        "dtype": "int8",
+        "scale": 0.0015747555362896656,
+        "zeroPoint": 0
+      },
+      "bias": {
+        "offset": 24488,
+        "length": 64,
+        "dtype": "float32"
+      }
+    },
+    {
+      "type": "relu"
+    },
+    {
+      "type": "globalavgpool"
+    },
+    {
+      "type": "dense",
+      "inFeatures": 64,
+      "outFeatures": 21501,
+      "weight": {
+        "offset": 24744,
+        "length": 1376064,
+        "dtype": "int8",
+        "scale": 0.0015748022344168715,
+        "zeroPoint": 0
+      }
+    },
+    {
+      "type": "relu"
+    },
+    {
+      "type": "dense",
+      "inFeatures": 21501,
+      "outFeatures": 8,
+      "weight": {
+        "offset": 1400808,
+        "length": 172008,
+        "dtype": "int8",
+        "scale": 1,
+        "zeroPoint": 0
+      },
+      "bias": {
+        "offset": 1572816,
+        "length": 8,
+        "dtype": "float32"
+      }
+    }
+  ],
+  "output": {
+    "size": 8,
+    "meaning": "4 LCD corners (x,y) normalised, TL,TR,BR,BL"
+  },
+  "referenceVector": {
+    "input": {
+      "pattern": "ramp"
+    },
+    "output": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ]
+  }
+}

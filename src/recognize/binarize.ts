@@ -1,8 +1,8 @@
-// Shared pixel utilities. `toGray` + `otsuThreshold` are the building blocks the
-// segment decoder composes (segments.ts owns its own two-stage binarisation:
-// global Otsu to find the LCD, then a sensitive adaptive pass within it). The
-// in-place `binarize` (plain global Otsu) is kept for the Tesseract preprocess
-// path. All pure, so the browser app and the Node harness run identical logic.
+// Shared pixel utilities for the segment decoder. `toGray` + `histogram` +
+// `otsuThreshold` are the building blocks segments.ts composes (it owns its own
+// two-stage binarisation: global Otsu to find the LCD, then a sensitive adaptive
+// pass within it). All pure, so the browser app and the Node harness run identical
+// logic.
 
 /** Luma (Rec. 601) of an RGBA buffer, one byte per pixel. */
 export function toGray(rgba: Uint8ClampedArray, width: number, height: number): Uint8Array {
@@ -18,22 +18,6 @@ export function histogram(gray: Uint8Array): number[] {
   const hist = new Array<number>(256).fill(0)
   for (let p = 0; p < gray.length; p++) hist[gray[p]]++
   return hist
-}
-
-/** Plain global-Otsu binarisation, mutating RGBA in place to black-on-white. */
-export function binarize(
-  rgba: Uint8ClampedArray,
-  width: number,
-  height: number,
-): { threshold: number } {
-  const gray = toGray(rgba, width, height)
-  const threshold = otsuThreshold(histogram(gray), width * height)
-  for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
-    const v = gray[p] <= threshold ? 0 : 255 // dark pixels (digits) → black on white
-    rgba[i] = rgba[i + 1] = rgba[i + 2] = v
-    rgba[i + 3] = 255
-  }
-  return { threshold }
 }
 
 /** Otsu's method: the global threshold maximising between-class variance. */

@@ -12,53 +12,62 @@ describe('isFirstLoad', () => {
     expect(isFirstLoad('assets/index-CPWZAPQQ.js.map')).toBe(false)
   })
 
-  it('excludes public/ passthrough not declared eager (e.g. the unwired Tesseract data)', () => {
-    expect(isFirstLoad('traineddata/digits.traineddata')).toBe(false)
-    expect(isFirstLoad('models/corner-v1.onnx')).toBe(false)
+  it('counts the corner model + manifest under models/ (eager by default, issue #9)', () => {
+    // KernelCornerSource fetches both before the first reading, so they count.
+    expect(isFirstLoad('models/corner-dummy-v1.bin')).toBe(true)
+    expect(isFirstLoad('models/corner-dummy-v1.json')).toBe(true)
   })
 
-  it('counts a runtime-fetched asset once it is declared eager', () => {
-    expect(isFirstLoad('models/corner-v1.onnx', ['models/**'])).toBe(true)
-    expect(isFirstLoad('models/corner-v1.onnx', ['models/corner-v1.onnx'])).toBe(true)
-    // glob is anchored: a sibling dir is not swept in by accident
-    expect(isFirstLoad('other/corner-v1.onnx', ['models/**'])).toBe(false)
+  it('excludes other public/ passthrough not under models/', () => {
+    expect(isFirstLoad('robots.txt')).toBe(false)
+    expect(isFirstLoad('icons/app.svg')).toBe(false)
+  })
+
+  it('honours an explicit eager override', () => {
+    expect(isFirstLoad('weights/corner.bin', ['weights/**'])).toBe(true)
+    expect(isFirstLoad('weights/corner.bin', ['models/**'])).toBe(false) // anchored, no accident
   })
 })
 
 describe('globToRegExp', () => {
   it('treats * as intra-segment and ** as cross-segment', () => {
-    expect(globToRegExp('models/*.onnx').test('models/a.onnx')).toBe(true)
-    expect(globToRegExp('models/*.onnx').test('models/sub/a.onnx')).toBe(false)
-    expect(globToRegExp('models/**').test('models/sub/a.onnx')).toBe(true)
+    expect(globToRegExp('models/*.bin').test('models/a.bin')).toBe(true)
+    expect(globToRegExp('models/*.bin').test('models/sub/a.bin')).toBe(false)
+    expect(globToRegExp('models/**').test('models/sub/a.bin')).toBe(true)
   })
 
   it('anchors fully (no partial matches)', () => {
-    expect(globToRegExp('models/**').test('x/models/a.onnx')).toBe(false)
+    expect(globToRegExp('models/**').test('x/models/a.bin')).toBe(false)
   })
 })
 
 describe('computeBudget', () => {
-  // The current-shape bundle: app + the unwired ~1.4 MB Tesseract passthrough.
+  // The current-shape bundle (issue #9): the app + the ~1.5 MB corner model asset.
   const currentBundle = [
     { rel: 'index.html', bytes: 2105 },
-    { rel: 'assets/index-CPWZAPQQ.js', bytes: 20823 },
+    { rel: 'assets/index-CPWZAPQQ.js', bytes: 29815 },
     { rel: 'assets/index-KN4EMpIF.css', bytes: 3093 },
-    { rel: 'traineddata/digits.traineddata', bytes: 1442809 },
+    { rel: 'models/corner-dummy-v1.bin', bytes: 1_572_848 },
+    { rel: 'models/corner-dummy-v1.json', bytes: 3098 },
   ]
 
-  it('counts only the app, not the lazy passthrough, and passes well under budget', () => {
+  it('counts the app + the eager model, and passes within budget', () => {
     const r = computeBudget(currentBundle)
-    expect(r.firstLoadTotal).toBe(2105 + 20823 + 3093) // 26021 — the traineddata excluded
+    expect(r.firstLoadTotal).toBe(2105 + 29815 + 3093 + 1_572_848 + 3098)
     expect(r.budgetBytes).toBe(BUDGET_BYTES)
     expect(r.withinBudget).toBe(true)
     expect(r.over).toBeLessThan(0)
-    expect(r.firstLoad.map((f) => f.rel)).not.toContain('traineddata/digits.traineddata')
+    expect(r.firstLoad.map((f) => f.rel)).toContain('models/corner-dummy-v1.bin')
+    expect(r.uncounted).toHaveLength(0)
   })
 
-  it('flags the large uncounted passthrough so a forgotten eager asset cannot hide', () => {
-    const r = computeBudget(currentBundle)
-    const trained = r.uncounted.find((f) => f.rel === 'traineddata/digits.traineddata')
-    expect(trained?.warn).toBe(true) // 1.4 MB ≥ 256 KiB warn threshold
+  it('flags a large uncounted passthrough so a forgotten eager asset cannot hide', () => {
+    const r = computeBudget([
+      { rel: 'index.html', bytes: 2105 },
+      { rel: 'media/poster.png', bytes: 1_400_000 }, // not under models/ → uncounted
+    ])
+    const poster = r.uncounted.find((f) => f.rel === 'media/poster.png')
+    expect(poster?.warn).toBe(true) // ≥ 256 KiB warn threshold
   })
 
   it('does not flag small uncounted files', () => {
@@ -70,7 +79,7 @@ describe('computeBudget', () => {
     const r = computeBudget(
       [
         { rel: 'index.html', bytes: 2105 },
-        { rel: 'assets/model-bundle.js', bytes: 6 * 1024 * 1024 },
+        { rel: 'models/oversized.bin', bytes: 6 * 1024 * 1024 }, // a model that blows the gate
       ],
       { budgetBytes: 5 * 1024 * 1024 },
     )
@@ -82,11 +91,11 @@ describe('computeBudget', () => {
     const files = [
       { rel: 'index.html', bytes: 2105 },
       { rel: 'assets/index.js', bytes: 20000 },
-      { rel: 'models/corner-v1.onnx', bytes: 1_200_000 },
+      { rel: 'weights/corner.bin', bytes: 1_200_000 },
     ]
     const without = computeBudget(files)
-    const withModel = computeBudget(files, { eagerAssets: ['models/**'] })
-    expect(without.firstLoadTotal).toBe(2105 + 20000) // model excluded until declared
+    const withModel = computeBudget(files, { eagerAssets: ['weights/**'] })
+    expect(without.firstLoadTotal).toBe(2105 + 20000) // excluded until declared
     expect(withModel.firstLoadTotal).toBe(2105 + 20000 + 1_200_000) // now counted
     expect(withModel.uncounted).toHaveLength(0)
   })
