@@ -4,7 +4,7 @@
   "baseRes": 200,
   "arch": [8, 16, 32, 32, 64],
   "epochs": 90,
-  "augPerBase": 28,
+  "augPerBase": 48,
   "lr": 0.002,
   "huberBeta": 0.1,
   "jitter": 0.12,

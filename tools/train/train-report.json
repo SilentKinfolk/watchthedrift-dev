@@ -1,7 +1,7 @@
 {
   "seed": 1234,
   "epochs": 90,
-  "augPerBase": 28,
+  "augPerBase": 48,
   "lr": 0.002,
   "bases": [
     "f91w-all-segments.jpg",
@@ -16,25 +16,25 @@
   "evalGoldCornerError": {
     "f91w-5051_06-04-56_12h.jpg": {
       "stratum": "hard",
-      "error": 0.1652
+      "error": 0.073
     },
     "f91w-counterfeit_16-08-53_24h.jpg": {
       "stratum": "easy",
-      "error": 0.0628
+      "error": 0.058
     },
     "f91w-front-closeup_19-45-08_24h.jpg": {
       "stratum": "hard",
-      "error": 0.1306
+      "error": 0.1072
     },
     "f91w-fulllength_17-00-22_24h.jpg": {
       "stratum": "moderate",
-      "error": 0.19
+      "error": 0.2659
     },
     "f91w-inverted_20-19-48_24h.jpg": {
       "stratum": "moderate",
-      "error": 0.2245
+      "error": 0.2377
     }
   },
-  "easyModerateMeanCornerError": 0.1591,
-  "trainSeconds": 206.4
+  "easyModerateMeanCornerError": 0.1872,
+  "trainSeconds": 542.2
 }
