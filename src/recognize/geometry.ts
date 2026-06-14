@@ -1,11 +1,10 @@
-// Where the time digits sit, and how the on-screen alignment guide is shaped.
+// What region of the camera frame the recogniser reads.
 //
-// The guide box and this crop are the SAME rectangle: the viewfinder's
-// aspect-ratio is set to the live camera frame's, so the on-screen box maps 1:1
-// to the cropped pixels. We crop just the HH:MM:SS band (wide and short) — the
-// rest of the watch can sit outside it. The defaults are a starting point to be
-// tuned against real F-91W photos; in debug you can override them live with
-// ?crop=w,h,cx,cy (fractions 0..1) without rebuilding.
+// v2 drops the alignment box (issue #12): the learned corner detector finds the LCD
+// anywhere in frame, so we feed it the WHOLE frame and let it locate the watch —
+// the region is FULL_FRAME by default. A `?crop=w,h,cx,cy` debug override (fractions
+// 0..1) can still restrict it to a sub-rectangle for dev work, mapped 1:1 onto the
+// live frame (the viewfinder's aspect-ratio matches the camera's).
 
 export interface NormCrop {
   cx: number
@@ -21,15 +20,11 @@ export interface PixelRect {
   h: number
 }
 
-/** Centred alignment box holding HH:MM:SS (normalised 0..1). Wide & short, and
- *  deliberately SMALL: a phone can't focus closer than ~10 cm, so the watch sits
- *  a hand's width away, where the time row fills only a small part of the frame.
- *  Line the time row up inside this box — the decoder reads what's in it (and
- *  locally re-thresholds the LCD it finds there). Cropping tight to the row keeps
- *  the binarisation LCD-dominated; feeding the whole scene instead let a bright
- *  background skew the threshold and read an off-angle face as all-black. Fine-
- *  tune live in ?debug=1 with the W/H controls. */
-export const TIME_CROP: NormCrop = { cx: 0.5, cy: 0.52, w: 0.24, h: 0.1 }
+/** The whole camera frame — the default region fed to the recogniser now that the
+ *  alignment box is gone (issue #12). The learned corner detector localises the LCD
+ *  within it (and on abstain the decoder flood-fills for the LCD itself), so there's
+ *  nothing for the user to line up. */
+export const FULL_FRAME: NormCrop = { cx: 0.5, cy: 0.5, w: 1, h: 1 }
 
 export function cropToPixels(c: NormCrop, frameW: number, frameH: number): PixelRect {
   const w = Math.round(c.w * frameW)

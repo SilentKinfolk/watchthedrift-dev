@@ -5,10 +5,12 @@ import { manualCornerSource, firstAvailable } from '../recognize/corners'
 import { kernelCornerSource, fetchKernelModel } from '../recognize/KernelCornerSource'
 import { drawDecodeOverlay } from '../recognize/overlay'
 import { preprocess } from '../recognize/preprocess'
-import { TIME_CROP, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
+import { FULL_FRAME, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
+import { measureExposure, legibility } from '../recognize/exposure'
 import { computeDrift, type DriftResult } from '../drift/Drift'
 import { isDebug, renderDebug } from './DebugView'
 import { applyResult } from './format'
+import { feedbackFor, feedbackMessage } from './feedback'
 
 type State = 'idle' | 'starting' | 'preview' | 'scanning' | 'result' | 'error'
 
@@ -17,7 +19,6 @@ const SCAN_GAP_MS = 150 // pause between decode attempts (self-paced, no overlap
 const SCAN_MIN_PAIR_MS = 400 // two corroborating reads must be ≥ this far apart in time
 const SCAN_AGREE_S = 1.0 // …and their drift must match within this many seconds
 const SCAN_SAMPLE_WINDOW_MS = 4000 // forget reads older than this when corroborating
-const SCAN_HINT_AFTER_MS = 7000 // nudge the user if nothing has read by now
 const DEBUG_RENDER_GAP_MS = 350 // throttle the ?debug overlay while scanning
 
 // The whole single-screen app. Holds a stable DOM skeleton (so the live <video>
@@ -26,17 +27,14 @@ export class Screen {
   private readonly root: HTMLElement
   private readonly camera = new Camera()
   private readonly time = new TimeSync()
-  // The F-91W segment decoder reads the alignment box: we crop to TIME_CROP (the
-  // on-screen box) and it locates + locally re-thresholds the LCD within that
-  // crop. Cropping tight keeps binarisation clean — feeding the whole frame let a
-  // bright background skew the threshold and read an off-angle face as all-black.
-  //
-  // The decoder sits behind the rectification stage (#4): given the LCD's four
-  // corners it reads a frontal, straightened crop. The corners come from the learned
-  // KernelCornerSource (#9), loaded lazily in recognizer.init(); a `?corners=` debug
-  // override sits in front of it. The shipped model is the trained `corner-v1` (#11);
-  // when it can't find a plausible LCD it abstains (returns null) and the pipeline
-  // falls back to feeding the raw crop straight to v1 — never worse than v1.
+  // v2 drops the alignment box (#12): we feed the WHOLE frame and the learned corner
+  // detector finds the LCD wherever it sits — that is the "without lining anything up"
+  // win. The detector regresses the LCD's four corners; given them the rectifier hands
+  // the v1 segment decoder a frontal, straightened crop. The corners come from the
+  // learned KernelCornerSource (#9), loaded lazily in recognizer.init(); a `?corners=`
+  // debug override sits in front of it. The shipped model is the trained `corner-v1`
+  // (#11); when it can't find a plausible LCD it abstains (returns null) and the
+  // decoder flood-fills the whole frame for the LCD itself — never worse than v1.
   private readonly recognizer = new RectifyingSegmentRecognizer(
     firstAvailable(
       manualCornerSource(),
@@ -48,21 +46,21 @@ export class Screen {
   private state: State = 'idle'
   private is24h = true
   private lastDrift: DriftResult | null = null
-  private crop: NormCrop = cropOverride() ?? TIME_CROP
+  // Region of the frame we read. Whole frame by default (the detector localises the
+  // LCD); a `?crop=` debug override can still restrict it for dev work.
+  private crop: NormCrop = cropOverride() ?? FULL_FRAME
   // Live reference-clock tick (self-correcting onto the true-second boundary).
   private clockTimer: ReturnType<typeof setTimeout> | null = null
 
   // Live-scan loop state.
   private scanning = false
   private scanTimer: ReturnType<typeof setTimeout> | null = null
-  private scanStartedAt = 0
   private lastDebugAt = 0
   /** Recent valid reads (drift + capture time) for the agree-twice cross-check. */
   private samples: Array<{ offsetSec: number; at: number }> = []
 
   private video!: HTMLVideoElement
   private viewfinder!: HTMLElement
-  private guide!: HTMLElement
   private clockBox!: HTMLElement
   private clockTime!: HTMLElement
   private answer!: HTMLElement
@@ -94,7 +92,6 @@ export class Screen {
       </div>
       <div class="viewfinder" hidden>
         <video playsinline muted></video>
-        <div class="guide"></div>
       </div>
       <div class="answer" hidden></div>
       <div class="band" hidden></div>
@@ -105,7 +102,6 @@ export class Screen {
     `
     this.viewfinder = this.q('.viewfinder')
     this.video = this.q('video')
-    this.guide = this.q('.guide')
     this.clockBox = this.q('.clock')
     this.clockTime = this.q('.clock-time')
     this.answer = this.q('.answer')
@@ -114,24 +110,12 @@ export class Screen {
     this.cond = this.q('.cond')
     this.controls = this.q('.controls')
     this.debugBox = this.q('.debug')
-    this.applyGuide()
     this.setState('idle')
     this.startClock()
   }
 
   private q<T extends HTMLElement>(sel: string): T {
     return this.root.querySelector(sel) as T
-  }
-
-  /** Position the alignment box from the crop fractions. Because the viewfinder's
-   *  aspect-ratio is set to the camera frame's, on-screen fractions map 1:1 to
-   *  frame fractions — so what's framed is exactly what gets cropped for OCR. */
-  private applyGuide(): void {
-    const c = this.crop
-    this.guide.style.left = `${(c.cx - c.w / 2) * 100}%`
-    this.guide.style.top = `${(c.cy - c.h / 2) * 100}%`
-    this.guide.style.width = `${c.w * 100}%`
-    this.guide.style.height = `${c.h * 100}%`
   }
 
   private setState(state: State): void {
@@ -154,12 +138,12 @@ export class Screen {
         this.setSub('Starting the camera…')
         break
       case 'preview':
-        this.setSub('Fit the time row (HH:MM:SS) inside the box, hold steady, then tap Scan.')
+        this.setSub('Point your phone at your watch — anywhere in frame — and tap Scan. No need to line it up.')
         this.controls.append(this.btn('Scan', () => void this.startScan()), this.modeToggle())
-        if (this.debug) this.controls.append(this.sizeControls())
         break
       case 'scanning':
-        this.setSub('Scanning… keep the time row inside the box and hold steady.')
+        // Live feedback takes over from here, refreshed each frame by processFrame.
+        this.setSub(feedbackMessage('searching'))
         this.controls.append(this.btn('Stop', () => this.setState('preview')))
         break
       case 'result': {
@@ -181,7 +165,6 @@ export class Screen {
     const res = await this.camera.start(this.video)
     if (res.ok) {
       this.viewfinder.style.aspectRatio = `${res.value.width} / ${res.value.height}`
-      this.applyGuide()
       this.setState('preview')
     } else {
       this.showError(res.error)
@@ -196,7 +179,6 @@ export class Screen {
     await this.recognizer.init() // instant for the segment decoder
     this.samples = []
     this.scanning = true
-    this.scanStartedAt = performance.now()
     this.setState('scanning')
     void this.scanTick()
   }
@@ -231,7 +213,13 @@ export class Screen {
     const trueUtc = this.time.trueUtcAt(cap.perfTimestamp)
     const rect = cropToPixels(this.crop, cap.width, cap.height)
     const pre = preprocess(cap.canvas, rect)
-    const rec = await this.recognizer.recognize({ canvas: pre.canvas, is24h: this.is24h })
+
+    // Honesty gate: judge the scene's exposure before trusting any read. Too dark →
+    // abstain outright (don't even decode) and ask for light rather than guess.
+    const exposure = measureExposure(pre.imageData.data)
+    const legible = legibility(exposure)
+    const rec =
+      legible === 'too-dark' ? null : await this.recognizer.recognize({ canvas: pre.canvas, is24h: this.is24h })
     if (!this.scanning) return // stopped while we were decoding
 
     if (this.debug && cap.perfTimestamp - this.lastDebugAt > DEBUG_RENDER_GAP_MS) {
@@ -239,17 +227,16 @@ export class Screen {
       renderDebug(this.debugBox, {
         scene: cropCanvas(cap.canvas, rect, 480),
         decoded: this.decodedCanvas(),
-        raw: rec.ok ? rec.value.raw : rec.raw ?? '',
-        confidence: rec.ok ? rec.value.confidence : undefined,
+        raw: rec ? (rec.ok ? rec.value.raw : (rec.raw ?? '')) : `too dark (luma ${Math.round(exposure.meanLuma)})`,
+        confidence: rec && rec.ok ? rec.value.confidence : undefined,
         crop: this.crop,
       })
       this.debugBox.hidden = false
     }
 
-    if (!rec.ok) {
-      if (performance.now() - this.scanStartedAt > SCAN_HINT_AFTER_MS && this.samples.length === 0) {
-        this.setSub('Still looking — line the time row up inside the box, in good light, and hold steady.')
-      }
+    // No usable read this frame → show the honest live-feedback nudge, keep scanning.
+    if (!rec || !rec.ok) {
+      this.setSub(feedbackMessage(feedbackFor({ legibility: legible, gotRead: false })))
       return
     }
 
@@ -274,7 +261,8 @@ export class Screen {
       this.lastDrift = drift
       this.setState('result')
     } else {
-      this.setSub('Got the time — hold steady…')
+      // A read in hand, holding a beat for a second one to corroborate it.
+      this.setSub(feedbackMessage('found'))
     }
   }
 
@@ -345,43 +333,6 @@ export class Screen {
     return wrap
   }
 
-  /** Debug-only live box sizing, so the crop can be dialled in on-device. */
-  private sizeControls(): HTMLElement {
-    const wrap = document.createElement('span')
-    wrap.className = 'mode'
-    const readout = document.createElement('span')
-    readout.className = 'mode-label'
-    const update = (): void => {
-      this.applyGuide()
-      const c = this.crop
-      readout.textContent = `box ${c.w.toFixed(2)}×${c.h.toFixed(2)} @ ${c.cx.toFixed(2)},${c.cy.toFixed(2)}`
-    }
-    const adj = (dw: number, dh: number) => (): void => {
-      this.crop = {
-        ...this.crop,
-        w: clamp(this.crop.w + dw, 0.08, 1),
-        h: clamp(this.crop.h + dh, 0.05, 1),
-      }
-      update()
-    }
-    const link = (label: string, on: () => void): HTMLButtonElement => {
-      const b = document.createElement('button')
-      b.className = 'textlink'
-      b.textContent = label
-      b.addEventListener('click', on)
-      return b
-    }
-    wrap.append(
-      link('W−', adj(-0.04, 0)),
-      link('W+', adj(0.04, 0)),
-      link('H−', adj(0, -0.03)),
-      link('H+', adj(0, 0.03)),
-      readout,
-    )
-    update()
-    return wrap
-  }
-
   private setSub(text: string): void {
     this.sub.textContent = text
   }
@@ -428,10 +379,6 @@ export class Screen {
     }
     return `time checked against ${names[o.source] ?? o.source}`
   }
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, n))
 }
 
 /** HH:MM:SS in the watch's own mode, so the on-screen reference reads like the
