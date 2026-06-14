@@ -85,6 +85,18 @@ describe('TimeSync.sync resilience', () => {
     expect(ts.trueUtcAt(performance.now()).uncertaintyMs).toBe(Number.POSITIVE_INFINITY)
   })
 
+  it('is trusted only after a network-verified sync, never when degraded', async () => {
+    const good = new TimeSync([{ id: 'timeapi', fetch: ok(5_000_000, 1) }])
+    expect(good.trusted).toBe(false) // nothing synced yet
+    await good.sync({ samples: 1, timeoutMs: 50 })
+    expect(good.trusted).toBe(true)
+
+    const offline = new TimeSync([{ id: 'timeapi', fetch: fail }])
+    await offline.sync({ samples: 2, timeoutMs: 50 })
+    expect(offline.current?.degraded).toBe(true)
+    expect(offline.trusted).toBe(false) // degraded device-clock fallback is NOT trusted
+  })
+
   it('locks onto a source after one good sample, despite later failures', async () => {
     let calls = 0
     const flaky: ChainEntry['fetch'] = async (): Promise<TimeSample> => {

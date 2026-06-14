@@ -36,8 +36,13 @@ v2.1 hard-stratum issue (#21); it abstains rather than guessing where it can't.
 frame to that corner detector, so there's nothing to line up (this also fixes a
 train/serve skew: the detector is trained on whole frames). A scan shows minimal,
 honest live feedback (found it / hold steady / glare), and below an ambient-light
-floor it **abstains** ("find more light") rather than guess. The time check still
-needs the network; offline behaviour is #13.
+floor it **abstains** ("find more light") rather than guess.
+
+**Offline + PWA (#13):** installable, and a service worker caches the app shell + the
+corner model (now a build-hashed same-origin asset → atomic app+model versioning), so
+**reading works offline**. The time check still needs the network — and offline the app
+says **"connect to measure"** rather than ever measuring against the device clock (the
+phone clock is exactly the thing that might be wrong).
 
 ## Direction (read these first)
 

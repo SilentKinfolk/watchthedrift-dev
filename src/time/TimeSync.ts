@@ -116,6 +116,15 @@ export class TimeSync {
     return this.offset
   }
 
+  /** True only when we hold a network-verified offset — i.e. a real internet time
+   *  check landed. A degraded (every-source-failed) fallback is NOT trusted: the app
+   *  must never turn the unverified device clock into a drift number (PLAN: offline →
+   *  "connect to measure", never the phone clock — it is the thing that might be
+   *  wrong). `sync()` still resolves degraded so the UI can report the failure. */
+  get trusted(): boolean {
+    return this.offset != null && !this.offset.degraded
+  }
+
   /** Map a capture-instant performance.now() value to true UTC + its band. */
   trueUtcAt(perfNow: number): { epochMs: number; uncertaintyMs: number } {
     if (!this.offset) throw new Error('TimeSync: call sync() first')

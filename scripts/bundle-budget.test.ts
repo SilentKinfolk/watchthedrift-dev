@@ -12,20 +12,24 @@ describe('isFirstLoad', () => {
     expect(isFirstLoad('assets/index-CPWZAPQQ.js.map')).toBe(false)
   })
 
-  it('counts the corner model + manifest under models/ (eager by default, issue #9)', () => {
-    // KernelCornerSource fetches both before the first reading, so they count.
-    expect(isFirstLoad('models/corner-v1.bin')).toBe(true)
-    expect(isFirstLoad('models/corner-v1.json')).toBe(true)
+  it('counts the corner model as a hashed assets/ asset (issue #13: ?url, not passthrough)', () => {
+    // Since #13 the model is imported with `?url`, so Vite emits it into assets/ with
+    // a content hash — counted by the assets/ rule for free, no eager declaration.
+    expect(isFirstLoad('assets/corner-v1-DEADBEEF.bin')).toBe(true)
+    expect(isFirstLoad('assets/corner-v1-DEADBEEF.json')).toBe(true)
   })
 
-  it('excludes other public/ passthrough not under models/', () => {
-    expect(isFirstLoad('robots.txt')).toBe(false)
-    expect(isFirstLoad('icons/app.svg')).toBe(false)
+  it('excludes public/ passthrough (sw.js, manifest, icons) — not fetched at first paint', () => {
+    // The service worker, manifest, and PWA icons land at the dist root and are
+    // fetched after first paint (on SW install), so they are not first-load.
+    expect(isFirstLoad('sw.js')).toBe(false)
+    expect(isFirstLoad('manifest.webmanifest')).toBe(false)
+    expect(isFirstLoad('icon-512.png')).toBe(false)
   })
 
-  it('honours an explicit eager override', () => {
+  it('honours an explicit eager override for a future runtime-fetched passthrough', () => {
     expect(isFirstLoad('weights/corner.bin', ['weights/**'])).toBe(true)
-    expect(isFirstLoad('weights/corner.bin', ['models/**'])).toBe(false) // anchored, no accident
+    expect(isFirstLoad('weights/corner.bin', [])).toBe(false) // default: nothing eager
   })
 })
 
@@ -42,30 +46,35 @@ describe('globToRegExp', () => {
 })
 
 describe('computeBudget', () => {
-  // The current-shape bundle (issue #11): the app + the trained ~144 KB corner model
-  // asset (the int8 corner-v1 weights, far under the per-model allowance).
+  // The current-shape bundle (issue #13): the app + the trained ~144 KB corner model,
+  // now a HASHED assets/ asset (?url) rather than a public/models/ passthrough — so it
+  // is counted by the assets/ rule, not an eager declaration.
   const currentBundle = [
     { rel: 'index.html', bytes: 2105 },
     { rel: 'assets/index-CPWZAPQQ.js', bytes: 29815 },
     { rel: 'assets/index-KN4EMpIF.css', bytes: 3093 },
-    { rel: 'models/corner-v1.bin', bytes: 147_272 },
-    { rel: 'models/corner-v1.json', bytes: 3313 },
+    { rel: 'assets/corner-v1-DEADBEEF.bin', bytes: 147_272 },
+    { rel: 'assets/corner-v1-C0FFEE42.json', bytes: 3313 },
+    // PWA passthrough at the dist root — present in dist/ but fetched after first paint.
+    { rel: 'sw.js', bytes: 1800 },
+    { rel: 'manifest.webmanifest', bytes: 420 },
+    { rel: 'icon-512.png', bytes: 4000 },
   ]
 
-  it('counts the app + the eager model, and passes within budget', () => {
+  it('counts the app + the hashed model, and excludes PWA passthrough', () => {
     const r = computeBudget(currentBundle)
     expect(r.firstLoadTotal).toBe(2105 + 29815 + 3093 + 147_272 + 3313)
     expect(r.budgetBytes).toBe(BUDGET_BYTES)
     expect(r.withinBudget).toBe(true)
     expect(r.over).toBeLessThan(0)
-    expect(r.firstLoad.map((f) => f.rel)).toContain('models/corner-v1.bin')
-    expect(r.uncounted).toHaveLength(0)
+    expect(r.firstLoad.map((f) => f.rel)).toContain('assets/corner-v1-DEADBEEF.bin')
+    expect(r.uncounted.map((f) => f.rel).sort()).toEqual(['icon-512.png', 'manifest.webmanifest', 'sw.js'])
   })
 
   it('flags a large uncounted passthrough so a forgotten eager asset cannot hide', () => {
     const r = computeBudget([
       { rel: 'index.html', bytes: 2105 },
-      { rel: 'media/poster.png', bytes: 1_400_000 }, // not under models/ → uncounted
+      { rel: 'media/poster.png', bytes: 1_400_000 }, // passthrough, undeclared → uncounted
     ])
     const poster = r.uncounted.find((f) => f.rel === 'media/poster.png')
     expect(poster?.warn).toBe(true) // ≥ 256 KiB warn threshold
@@ -80,7 +89,8 @@ describe('computeBudget', () => {
     const r = computeBudget(
       [
         { rel: 'index.html', bytes: 2105 },
-        { rel: 'models/oversized.bin', bytes: 6 * 1024 * 1024 }, // a model that blows the gate
+        // a hashed model asset (?url → assets/) that blows the gate
+        { rel: 'assets/oversized-DEADBEEF.bin', bytes: 6 * 1024 * 1024 },
       ],
       { budgetBytes: 5 * 1024 * 1024 },
     )

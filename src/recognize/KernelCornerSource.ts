@@ -160,18 +160,21 @@ export function kernelCornerSource(load: () => Promise<LoadedModel | null>, id =
 }
 
 /**
- * Browser loader for a same-origin model asset (manifest JSON + binary blob), e.g.
- * `models/corner-v1.{json,bin}` under the Vite base URL. Returns null on any
- * failure so the source abstains. Not exercised by unit tests (which inject an
- * in-memory model); used by the live app (Screen.ts).
+ * Browser loader for the model asset, given the resolved URLs of its manifest JSON
+ * and binary blob. The caller passes Vite `?url` imports (Screen.ts), so the model
+ * is a build-hashed, same-origin asset — cache-busted by content, which gives atomic
+ * app+model versioning (PLAN Infra) and lets the service worker precache it by its
+ * exact hashed name. Returns null on any failure so the source abstains (reading
+ * still works; offline a cached asset resolves, a missing one fails soft).
+ *
+ * Kept here (next to the source it feeds) but URL-agnostic on purpose: it never
+ * constructs a path, so this module stays free of `?url` imports and remains
+ * strip-types-clean for the Node eval harness, which imports it. Not exercised by
+ * unit tests (which inject an in-memory model).
  */
-export async function fetchKernelModel(baseUrl: string, name: string): Promise<LoadedModel | null> {
+export async function fetchKernelModel(manifestUrl: string, blobUrl: string): Promise<LoadedModel | null> {
   try {
-    const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
-    const [manifestRes, blobRes] = await Promise.all([
-      fetch(`${base}models/${name}.json`),
-      fetch(`${base}models/${name}.bin`),
-    ])
+    const [manifestRes, blobRes] = await Promise.all([fetch(manifestUrl), fetch(blobUrl)])
     if (!manifestRes.ok || !blobRes.ok) return null
     const manifest = (await manifestRes.json()) as Manifest
     const blob = new Uint8Array(await blobRes.arrayBuffer())

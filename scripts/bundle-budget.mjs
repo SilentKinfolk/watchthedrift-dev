@@ -12,17 +12,22 @@
 export const BUDGET_BYTES = 5 * 1024 * 1024 // ~5 MB (5 MiB)
 
 /**
- * Glob patterns (dist-relative, forward slashes) for model/runtime assets the
- * app fetches at runtime at/before the first reading — i.e. public/ passthrough
- * assets that must count toward first-load even though they aren't bundled into
- * assets/**. The corner-detector model + its manifest (issue #9) live under
- * public/models/ and are fetched by KernelCornerSource before the first reading,
- * so they count. (The bespoke TS inference kernel itself is plain app code — it
- * lands in assets/** and is counted there for free; there is no separate wasm
- * runtime to register, which is the whole point of PLAN decision #2.)
- * Supports `*` (intra-segment) and `**` (any).
+ * Glob patterns (dist-relative, forward slashes) for model/runtime assets the app
+ * fetches at runtime at/before the first reading that are public/ PASSTHROUGH —
+ * i.e. copied verbatim to the dist root, not bundled into assets/** — and so would
+ * otherwise escape the count.
+ *
+ * Empty today, on purpose. The corner-detector model used to live under
+ * public/models/ and be registered here (issue #9); since issue #13 it is imported
+ * through Vite's module graph (`?url`), so it lands in assets/** as a build-HASHED
+ * asset and is counted there for free (which also gives atomic app+model versioning
+ * + lets the service worker precache it by its exact name). The bespoke TS inference
+ * kernel is likewise plain app code in assets/**. So nothing is fetched from a
+ * passthrough path at first load — but the mechanism stays for any future one, and
+ * the large-uncounted warning (below) still catches an eager asset someone forgets
+ * to declare. Supports `*` (intra-segment) and `**` (any).
  */
-export const EAGER_RUNTIME_ASSETS = ['models/**']
+export const EAGER_RUNTIME_ASSETS = []
 
 /** Uncounted files at/above this size are flagged — catches a forgotten eager asset. */
 export const WARN_UNCOUNTED_BYTES = 256 * 1024 // 256 KiB

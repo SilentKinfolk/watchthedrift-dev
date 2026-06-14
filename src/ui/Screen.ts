@@ -3,6 +3,13 @@ import { TimeSync } from '../time/TimeSync'
 import { RectifyingSegmentRecognizer } from '../recognize/RectifyingSegmentRecognizer'
 import { manualCornerSource, firstAvailable } from '../recognize/corners'
 import { kernelCornerSource, fetchKernelModel } from '../recognize/KernelCornerSource'
+// The learned corner model, imported through Vite's module graph (`?url`) so it ships
+// as a build-hashed, same-origin asset under assets/ — cache-busted by content (atomic
+// app+model versioning, PLAN Infra) and precached by the service worker by its exact
+// hashed name. These imports live in Screen (not KernelCornerSource), which the
+// strip-types Node harness imports and so must stay free of `?url` specifiers.
+import cornerManifestUrl from '../models/corner-v1.json?url'
+import cornerBlobUrl from '../models/corner-v1.bin?url'
 import { drawDecodeOverlay } from '../recognize/overlay'
 import { preprocess } from '../recognize/preprocess'
 import { FULL_FRAME, cropToPixels, cropOverride, type NormCrop, type PixelRect } from '../recognize/geometry'
@@ -12,7 +19,7 @@ import { isDebug, renderDebug } from './DebugView'
 import { applyResult } from './format'
 import { feedbackFor, feedbackMessage } from './feedback'
 
-type State = 'idle' | 'starting' | 'preview' | 'scanning' | 'result' | 'error'
+type State = 'idle' | 'starting' | 'preview' | 'scanning' | 'result' | 'offline' | 'error'
 
 // Live-scan tuning. We decode frames continuously and lock once two reads agree.
 const SCAN_GAP_MS = 150 // pause between decode attempts (self-paced, no overlap)
@@ -38,7 +45,7 @@ export class Screen {
   private readonly recognizer = new RectifyingSegmentRecognizer(
     firstAvailable(
       manualCornerSource(),
-      kernelCornerSource(() => fetchKernelModel(import.meta.env.BASE_URL ?? '/', 'corner-v1')),
+      kernelCornerSource(() => fetchKernelModel(cornerManifestUrl, cornerBlobUrl)),
     ),
   )
   private readonly debug = isDebug()
@@ -63,6 +70,7 @@ export class Screen {
   private viewfinder!: HTMLElement
   private clockBox!: HTMLElement
   private clockTime!: HTMLElement
+  private clockLabel!: HTMLElement
   private answer!: HTMLElement
   private band!: HTMLElement
   private sub!: HTMLElement
@@ -88,7 +96,7 @@ export class Screen {
       <h1 class="question">How many seconds is your watch off?</h1>
       <div class="clock" hidden>
         <div class="clock-time">--:--:--</div>
-        <div class="clock-label">true time now — compare with your watch</div>
+        <div class="clock-label"></div>
       </div>
       <div class="viewfinder" hidden>
         <video playsinline muted></video>
@@ -104,6 +112,7 @@ export class Screen {
     this.video = this.q('video')
     this.clockBox = this.q('.clock')
     this.clockTime = this.q('.clock-time')
+    this.clockLabel = this.q('.clock-label')
     this.answer = this.q('.answer')
     this.band = this.q('.band')
     this.sub = this.q('.sub')
@@ -154,6 +163,14 @@ export class Screen {
         this.controls.append(this.btn('Scan again', () => void this.startScan()))
         break
       }
+      case 'offline':
+        // Reading worked, but there is no trusted internet clock to measure against —
+        // and the device clock is never a substitute. Honest dead-end + a retry.
+        this.setSub(
+          'Connect to the internet to measure. Your watch was read on this device, but comparing it against true time needs a quick internet time check — the phone’s own clock can’t be trusted for this.',
+        )
+        this.controls.append(this.btn('Try again', () => void this.startScan()))
+        break
       case 'error':
         break
     }
@@ -174,13 +191,33 @@ export class Screen {
   /** Begin continuously decoding frames until two reads agree (point-and-catch). */
   private async startScan(): Promise<void> {
     if (this.state === 'scanning') return
-    // Make sure the clock sync is in flight; processFrame waits for it to land.
-    if (!this.time.current) this.time.sync().then(() => this.refreshCond()).catch(() => {})
+    // (Re)check the internet clock whenever we don't already hold a trusted one —
+    // including after a "Try again" from the offline screen (the user may have just
+    // reconnected). If it settles degraded while we're still scanning, flip straight
+    // to connect-to-measure rather than make the user fish for a read we can't turn
+    // into a number.
+    if (!this.time.trusted) {
+      this.time
+        .sync()
+        .then((off) => {
+          this.refreshCond()
+          this.renderClock()
+          if (off.degraded && this.scanning) this.showConnectToMeasure()
+        })
+        .catch(() => {})
+    }
     await this.recognizer.init() // instant for the segment decoder
     this.samples = []
     this.scanning = true
     this.setState('scanning')
     void this.scanTick()
+  }
+
+  /** Reading works offline, but a drift number needs a trusted internet clock we
+   *  don't have. An honest dead-end — never the device clock — that offers a retry. */
+  private showConnectToMeasure(): void {
+    this.lastDrift = null
+    this.setState('offline')
   }
 
   private stopScan(): void {
@@ -206,11 +243,10 @@ export class Screen {
    *  The drift is computed from the frame's own capture instant, so "when the
    *  picture was taken" is exact even though the video is live. */
   private async processFrame(): Promise<void> {
-    if (!this.time.current) return // wait for the clock; keep scanning
-
-    // Timestamp at the grab — this frame is a self-contained (time, image) pair.
+    // Timestamp at the grab — this frame is a self-contained (time, image) pair. We
+    // decode REGARDLESS of the clock so reading works offline (the model is cached);
+    // only turning a read into a drift number needs trusted time, gated below.
     const cap = this.camera.capture()
-    const trueUtc = this.time.trueUtcAt(cap.perfTimestamp)
     const rect = cropToPixels(this.crop, cap.width, cap.height)
     const pre = preprocess(cap.canvas, rect)
 
@@ -240,6 +276,16 @@ export class Screen {
       return
     }
 
+    // A read in hand — reading works even offline. But a drift number requires a
+    // TRUSTED internet time check; we never measure against the device clock. With no
+    // trusted time, say so honestly (connect-to-measure) instead of guessing a number.
+    if (!this.time.trusted) {
+      if (this.time.current?.degraded) this.showConnectToMeasure()
+      else this.setSub('Got your watch’s time — checking the internet clock…')
+      return
+    }
+
+    const trueUtc = this.time.trueUtcAt(cap.perfTimestamp)
     const drift = computeDrift(
       rec.value,
       trueUtc.epochMs,
@@ -341,24 +387,34 @@ export class Screen {
     this.cond.textContent = this.timeStatusText()
   }
 
-  /** Best estimate of true UTC right now, epoch ms: the synced reference once we
-   *  have it, otherwise the bare device clock until the first sync lands. */
-  private trueNowMs(): number {
-    return this.time.current ? this.time.trueUtcAt(performance.now()).epochMs : Date.now()
+  /** True UTC right now (epoch ms) ONLY when a network time check has landed; null
+   *  otherwise. We deliberately never fall back to the device clock — it is exactly
+   *  the thing that might be wrong, so presenting it as "true time now" would be the
+   *  same lie as measuring drift against it (PLAN: never the phone clock). */
+  private trustedNowMs(): number | null {
+    return this.time.trusted ? this.time.trueUtcAt(performance.now()).epochMs : null
   }
 
   private renderClock(): void {
-    this.clockTime.textContent = formatClock(new Date(this.trueNowMs()), this.is24h)
+    const ms = this.trustedNowMs()
+    this.clockTime.textContent = ms == null ? '--:--:--' : formatClock(new Date(ms), this.is24h)
+    this.clockLabel.textContent =
+      ms == null
+        ? 'true time needs an internet connection'
+        : 'true time now — compare with your watch'
   }
 
-  /** Tick the reference clock in step with real time. After each render we wait
-   *  out the rest of the current true second (plus a hair) so the displayed
-   *  seconds flip on the real boundary — what matters when eyeballing the watch
-   *  against it. setInterval(…, 1000) would slowly drift off the boundary. */
+  /** Tick the reference clock in step with real time. With trusted time we wait out
+   *  the rest of the current true second (plus a hair) so the displayed seconds flip
+   *  on the real boundary — what matters when eyeballing the watch against it
+   *  (setInterval(…, 1000) would slowly drift off it). Without it we show --:--:--
+   *  and just re-check once a second for a sync to land — never reading the device
+   *  clock, not even to schedule the tick. */
   private startClock(): void {
     const tick = (): void => {
       this.renderClock()
-      const delay = 1000 - (this.trueNowMs() % 1000) + 15
+      const ms = this.trustedNowMs()
+      const delay = ms == null ? 1000 : 1000 - (ms % 1000) + 15
       this.clockTimer = setTimeout(tick, delay)
     }
     if (this.clockTimer != null) clearTimeout(this.clockTimer)
@@ -369,7 +425,7 @@ export class Screen {
     const o = this.time.current
     if (!o) return 'checking the time…'
     if (o.degraded) {
-      return '⚠ couldn’t reach a time server — using this device’s clock, so treat the result as rough.'
+      return '⚠ no internet time check — reading works offline, but measuring drift needs a connection.'
     }
     const names: Record<string, string> = {
       timeapi: 'timeapi.io',
